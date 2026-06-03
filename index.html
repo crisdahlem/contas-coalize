@@ -108,6 +108,15 @@
   <div id="view_fluxo">
     <div class="toolbar">
       <div class="field"><label>Ano</label><select id="fx_ano"></select></div>
+      <div class="field"><label>Mês</label>
+        <select id="fx_mes">
+          <option value="">Ano inteiro</option>
+          <option value="0">Janeiro</option><option value="1">Fevereiro</option><option value="2">Março</option>
+          <option value="3">Abril</option><option value="4">Maio</option><option value="5">Junho</option>
+          <option value="6">Julho</option><option value="7">Agosto</option><option value="8">Setembro</option>
+          <option value="9">Outubro</option><option value="10">Novembro</option><option value="11">Dezembro</option>
+        </select>
+      </div>
       <div class="field"><label>Base</label>
         <select id="fx_base">
           <option value="tudo">Tudo (pago + a pagar)</option>
@@ -193,7 +202,7 @@ const today= () => new Date().toISOString().slice(0,10);
 const esc  = s => (s==null?'':String(s)).replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
 function refDate(c){ return c.status==='pago' ? (c.data_pagamento||c.vencimento) : c.vencimento; }
 
-let CONTAS=[], CATS=[], catById={}, VIEW='fluxo', ANO=new Date().getFullYear(), BASE='tudo';
+let CONTAS=[], CATS=[], catById={}, VIEW='fluxo', ANO=new Date().getFullYear(), BASE='tudo', MES='';
 
 function toast(msg, err){ const t=document.createElement('div'); t.className='toast'+(err?' err':''); t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(), err?6000:3500); }
 
@@ -234,24 +243,29 @@ function renderFluxo(){
     const m=+r.slice(5,7)-1;
     if(mat[c.categoria_id]) mat[c.categoria_id][m]+=Number(c.valor);
   });
+  // colunas exibidas: ano inteiro (12 meses) ou apenas o mes selecionado
+  const cols = MES==='' ? [...Array(12).keys()] : [+MES];
+  const showTot = cols.length>1;
+  const sumCols = arr => cols.reduce((s,i)=>s+arr[i],0);
   // cabecalho
-  let head='<thead><tr><th>CATEGORIA</th>'+MESES.map(m=>`<th>${m}.${ANO}</th>`).join('')+'<th>TOTAL</th></tr></thead>';
+  let head='<thead><tr><th>CATEGORIA</th>'+cols.map(i=>`<th>${MESES[i]}.${ANO}</th>`).join('')+(showTot?'<th>TOTAL</th>':'')+'</tr></thead>';
   // corpo agrupado
   let body='<tbody>';
   const grand=new Array(12).fill(0);
   let g=null, gtot=null;
-  const flushGrupo=()=>{ if(g!==null){ body+=`<tr class="grp"><td>${esc(g)}</td>`+gtot.map(v=>`<td>${v?rs0(v):'-'}</td>`).join('')+`<td>${rs0(gtot.reduce((a,b)=>a+b,0))}</td></tr>`+grpRows; } };
+  const flushGrupo=()=>{ if(g!==null){ body+=`<tr class="grp"><td>${esc(g)}</td>`+cols.map(i=>`<td>${gtot[i]?rs0(gtot[i]):'-'}</td>`).join('')+(showTot?`<td>${rs0(sumCols(gtot))}</td>`:'')+`</tr>`+grpRows; } };
   let grpRows='';
   CATS.forEach(c=>{
     if(c.grupo!==g){ flushGrupo(); g=c.grupo; gtot=new Array(12).fill(0); grpRows=''; }
-    const row=mat[c.id]; const rtot=row.reduce((a,b)=>a+b,0);
+    const row=mat[c.id];
     row.forEach((v,i)=>{gtot[i]+=v; grand[i]+=v;});
+    const rtot=sumCols(row);
     grpRows+=`<tr><td><span class="code">${esc(c.codigo||'')}</span>${esc(c.nome)}</td>`+
-      row.map(v=>`<td class="${v?'cur':'zero'}">${n0(v)}</td>`).join('')+
-      `<td class="${rtot?'cur':'zero'}">${n0(rtot)}</td></tr>`;
+      cols.map(i=>`<td class="${row[i]?'cur':'zero'}">${n0(row[i])}</td>`).join('')+
+      (showTot?`<td class="${rtot?'cur':'zero'}">${n0(rtot)}</td>`:'')+`</tr>`;
   });
   flushGrupo();
-  body+=`<tr class="tot"><td>TOTAL GERAL</td>`+grand.map(v=>`<td>${v?rs0(v):'-'}</td>`).join('')+`<td>${rs0(grand.reduce((a,b)=>a+b,0))}</td></tr>`;
+  body+=`<tr class="tot"><td>TOTAL GERAL</td>`+cols.map(i=>`<td>${grand[i]?rs0(grand[i]):'-'}</td>`).join('')+(showTot?`<td>${rs0(sumCols(grand))}</td>`:'')+`</tr>`;
   body+='</tbody>';
   $('#fx_tabela').innerHTML=head+body;
 }
@@ -341,6 +355,7 @@ document.querySelectorAll('.nav button').forEach(b=>b.onclick=()=>{
   render();
 });
 $('#fx_ano').onchange=()=>{ ANO=+$('#fx_ano').value; renderFluxo(); };
+$('#fx_mes').onchange=()=>{ MES=$('#fx_mes').value; renderFluxo(); };
 $('#fx_base').onchange=()=>{ BASE=$('#fx_base').value; renderFluxo(); };
 $('#n_salvar').onclick=salvar;
 $('#f_periodo').onchange=()=>{ const c=$('#f_periodo').value==='custom'; $('#f_de').disabled=!c; $('#f_ate').disabled=!c; renderLanc(); };
