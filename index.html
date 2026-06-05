@@ -118,6 +118,7 @@
     <button data-view="fluxo" class="active">Fluxo de Caixa</button>
     <button data-view="lanc">Lançamentos</button>
     <button data-view="comp">Comprovantes</button>
+    <button data-view="forn">Fornecedores</button>
   </div>
 
   <!-- ===== FLUXO DE CAIXA ===== -->
@@ -200,6 +201,37 @@
       </table>
     </div>
   </div>
+
+  <!-- ===== FORNECEDORES ===== -->
+  <div id="view_forn" style="display:none">
+    <div class="toolbar">
+      <div class="field" style="flex:1;min-width:220px"><label>Buscar fornecedor</label><input id="fn_busca" placeholder="Nome ou CNPJ"></div>
+      <button class="btn" id="fn_novo">+ Novo fornecedor</button>
+    </div>
+    <div class="panel">
+      <h2>Fornecedores <span class="muted" id="fn_count"></span></h2>
+      <table id="fn_tabela">
+        <thead><tr><th>Nome</th><th>CNPJ</th><th>Categoria padrão</th><th class="right">Lançamentos</th><th></th></tr></thead>
+        <tbody id="fn_tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: FORNECEDOR ===== -->
+<div id="forn_modal" class="modal" style="display:none">
+  <div class="modal-box" style="max-width:620px">
+    <div class="modal-head"><h2 id="fn_titulo">Novo fornecedor</h2><button class="modal-x" id="fn_close">×</button></div>
+    <div class="modal-body">
+      <div class="grid4" style="grid-template-columns:repeat(2,1fr)">
+        <div class="field"><label>Nome / Razão social *</label><input id="fn_nome"></div>
+        <div class="field"><label>CNPJ / CPF</label><input id="fn_cnpj" placeholder="Opcional"></div>
+        <div class="field"><label>Categoria padrão</label><select id="fn_cat"></select></div>
+        <div class="field"><label>Observação</label><input id="fn_obs" placeholder="Opcional"></div>
+      </div>
+    </div>
+    <div class="modal-foot"><span id="fn_status" class="muted"></span><button class="btn-ghost" id="fn_voltar">Voltar</button><button class="btn" id="fn_salvar">Salvar</button></div>
+  </div>
 </div>
 
 <!-- ===== MODAL: NOVA DESPESA ===== -->
@@ -273,6 +305,7 @@ function addMonths(iso,n){const[y,m,d]=iso.split('-').map(Number);const dt=new D
 let CONTAS=[],CATS=[],catById={},VIEW='fluxo',ANO=new Date().getFullYear(),BASE='tudo',MES='';
 let CP_MES='',CP_CONTA='',CP_FILTRO='';
 let LMES=new Date().toISOString().slice(0,7),LCONTA='',LBUSCA='',LSIT='';
+let FORNS=[],fornById={},FBUSCA='',FEDIT=null;
 
 function toast(msg,err){const t=document.createElement('div');t.className='toast'+(err?' err':'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),err?6000:3500);}
 function catOptions(){let h='<option value="">(escolha a categoria)</option>',g=null;CATS.forEach(c=>{if(c.grupo!==g){if(g!==null)h+='</optgroup>';h+='<optgroup label="'+esc(c.grupo)+'">';g=c.grupo;}h+=`<option value="${c.id}">${esc((c.codigo?c.codigo+' ':'')+c.nome)}</option>`;});if(g!==null)h+='</optgroup>';return h;}
@@ -288,8 +321,10 @@ async function carregar(){
   CONTAS=contas||[];CATS=cats||[];catById={};CATS.forEach(c=>catById[c.id]=c);
   $('#conn').textContent='conectado ✓';
   const co=catOptions(); $('#d_cat').innerHTML=co;
-  const {data:forns}=await db.from('fornecedores').select('nome').order('nome');
-  $('#forn_list').innerHTML=(forns||[]).map(f=>`<option value="${esc(f.nome)}">`).join('');
+  $('#fn_cat').innerHTML='<option value="">(nenhuma)</option>'+co.replace('<option value="">(escolha a categoria)</option>','');
+  const {data:forns}=await db.from('fornecedores').select('id,nome,cnpj,categoria_padrao_id,observacao').order('nome');
+  FORNS=forns||[]; fornById={}; FORNS.forEach(f=>fornById[f.id]=f);
+  $('#forn_list').innerHTML=FORNS.map(f=>`<option value="${esc(f.nome)}">`).join('');
   // anos (fluxo)
   const anos=new Set(CONTAS.map(c=>{const r=refDate(c);return r?+r.slice(0,4):null}).filter(Boolean));anos.add(new Date().getFullYear());
   $('#fx_ano').innerHTML=[...anos].sort().map(a=>`<option value="${a}" ${a===ANO?'selected':''}>${a}</option>`).join('');
@@ -314,7 +349,36 @@ async function carregar(){
   render();
 }
 
-function render(){if(VIEW==='fluxo')renderFluxo();else if(VIEW==='comp')renderComp();else renderLanc();}
+function render(){if(VIEW==='fluxo')renderFluxo();else if(VIEW==='comp')renderComp();else if(VIEW==='forn')renderForn();else renderLanc();}
+
+// ---- Fornecedores ----
+function renderForn(){
+  const q=FBUSCA.toLowerCase();
+  let rows=FORNS.filter(f=>!q||(f.nome||'').toLowerCase().includes(q)||(f.cnpj||'').toLowerCase().includes(q));
+  rows=rows.slice().sort((a,b)=>(a.nome||'').localeCompare(b.nome||''));
+  // contagem de lançamentos por fornecedor
+  const cnt={};CONTAS.forEach(c=>{if(c.fornecedor_id)cnt[c.fornecedor_id]=(cnt[c.fornecedor_id]||0)+1;});
+  $('#fn_count').textContent=`(${rows.length})`;
+  const tb=$('#fn_tbody');
+  if(!rows.length){tb.innerHTML='<tr><td colspan="5" class="empty">Nenhum fornecedor.</td></tr>';return;}
+  tb.innerHTML=rows.map(f=>{const cat=f.categoria_padrao_id&&catById[f.categoria_padrao_id];const ct=cat?((cat.codigo?cat.codigo+' ':'')+cat.nome):'<span class="muted">—</span>';
+    return `<tr><td>${esc(f.nome)}</td><td>${esc(f.cnpj||'—')}</td><td>${ct}</td><td class="right">${cnt[f.id]||0}</td>
+      <td class="right"><button class="btn-ghost btn-sm" onclick="abrirForn('${f.id}')">Editar</button> <button class="btn-del btn-sm" onclick="excluirForn('${f.id}')">✕</button></td></tr>`;}).join('');
+}
+function abrirForn(id){FEDIT=id||null;const f=id?fornById[id]:null;$('#fn_titulo').textContent=id?'Editar fornecedor':'Novo fornecedor';
+  $('#fn_nome').value=f?f.nome||'':'';$('#fn_cnpj').value=f?f.cnpj||'':'';$('#fn_cat').value=f&&f.categoria_padrao_id?f.categoria_padrao_id:'';$('#fn_obs').value=f?f.observacao||'':'';$('#fn_status').textContent='';
+  $('#forn_modal').style.display='flex';}
+function fecharForn(){$('#forn_modal').style.display='none';}
+async function salvarForn(){
+  const nome=$('#fn_nome').value.trim();if(!nome){toast('Informe o nome.',true);return;}
+  $('#fn_status').innerHTML='<span class="spin"></span> salvando…';
+  const payload={nome,cnpj:$('#fn_cnpj').value.trim()||null,categoria_padrao_id:$('#fn_cat').value||null,observacao:$('#fn_obs').value.trim()||null};
+  try{let error;if(FEDIT){({error}=await db.from('fornecedores').update(payload).eq('id',FEDIT));}else{({error}=await db.from('fornecedores').insert(payload));}
+    if(error)throw error;toast('Fornecedor salvo ✓');fecharForn();await carregar();
+  }catch(e){$('#fn_status').textContent='';toast('Erro: '+e.message,true);}
+}
+async function excluirForn(id){if(!confirm('Excluir este fornecedor? Os lançamentos dele continuam, mas sem vínculo.'))return;const{error}=await db.from('fornecedores').delete().eq('id',id);if(error){toast('Erro: '+error.message,true);return;}toast('Fornecedor excluído.');await carregar();}
+window.abrirForn=abrirForn;window.excluirForn=excluirForn;
 
 function renderFluxo(){
   const mat={};CATS.forEach(c=>mat[c.id]=new Array(12).fill(0));
@@ -421,7 +485,11 @@ function expLanc(){const mes=CONTAS.filter(c=>c.vencimento&&c.vencimento.slice(0
 function expComp(){let f=CONTAS.filter(c=>{const r=refDate(c);return r&&r.slice(0,7)===CP_MES;});if(CP_CONTA)f=f.filter(c=>c.conta===CP_CONTA);exportCSV(f,['Data','Descrição','Categoria','Conta','Valor','Comprovante','Arquivo','Valor NF'],c=>[refDate(c),c.descricao,catTxt(c),c.conta||'',c.valor,temComp(c)?'SIM':'NAO',c.arquivo_nf||'',c.valor_nf!=null?c.valor_nf:''],'comprovantes_'+CP_MES+'.csv');}
 
 // nav + eventos
-document.querySelectorAll('.nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');VIEW=b.dataset.view;$('#view_fluxo').style.display=VIEW==='fluxo'?'block':'none';$('#view_lanc').style.display=VIEW==='lanc'?'block':'none';$('#view_comp').style.display=VIEW==='comp'?'block':'none';render();});
+document.querySelectorAll('.nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');VIEW=b.dataset.view;$('#view_fluxo').style.display=VIEW==='fluxo'?'block':'none';$('#view_lanc').style.display=VIEW==='lanc'?'block':'none';$('#view_comp').style.display=VIEW==='comp'?'block':'none';$('#view_forn').style.display=VIEW==='forn'?'block':'none';render();});
+$('#fn_busca').oninput=()=>{FBUSCA=$('#fn_busca').value;renderForn();};
+$('#fn_novo').onclick=()=>abrirForn(null);
+$('#fn_close').onclick=fecharForn;$('#fn_voltar').onclick=fecharForn;$('#fn_salvar').onclick=salvarForn;
+$('#d_forn').addEventListener('change',()=>{const n=$('#d_forn').value.trim().toLowerCase();const f=FORNS.find(x=>(x.nome||'').toLowerCase()===n);if(f&&f.categoria_padrao_id&&!$('#d_cat').value){$('#d_cat').value=f.categoria_padrao_id;}});
 $('#fx_ano').onchange=()=>{ANO=+$('#fx_ano').value;renderFluxo();};
 $('#fx_mes').onchange=()=>{MES=$('#fx_mes').value;renderFluxo();};
 $('#fx_base').onchange=()=>{BASE=$('#fx_base').value;renderFluxo();};
