@@ -102,6 +102,7 @@
   <div class="nav">
     <button data-view="fluxo" class="active">Fluxo de Caixa</button>
     <button data-view="lanc">Lançamentos</button>
+    <button data-view="comp">Comprovantes</button>
   </div>
 
   <!-- ===== VIEW: FLUXO DE CAIXA ===== -->
@@ -185,6 +186,30 @@
       </table>
     </div>
   </div>
+
+  <!-- ===== VIEW: COMPROVANTES ===== -->
+  <div id="view_comp" style="display:none">
+    <div class="toolbar">
+      <div class="field"><label>Mês</label><select id="cp_mes"></select></div>
+      <div class="field"><label>Conta</label><select id="cp_conta"><option value="">Todas as contas</option></select></div>
+      <div class="field"><label>Comprovante</label>
+        <select id="cp_filtro"><option value="">Todos</option><option value="com">Com comprovante</option><option value="sem">Sem comprovante</option></select>
+      </div>
+      <button class="btn-ghost" id="cp_csv">Exportar CSV</button>
+    </div>
+    <div class="row">
+      <div class="card pago"><h3>Com comprovante</h3><div class="big" id="cp_com">—</div></div>
+      <div class="card venc"><h3>Sem comprovante</h3><div class="big" id="cp_sem">—</div></div>
+      <div class="card"><h3>% com comprovante</h3><div class="big" id="cp_pct">—</div></div>
+    </div>
+    <div class="panel">
+      <h2>Transações <span class="muted" id="cp_count"></span></h2>
+      <table id="cp_tabela">
+        <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Conta</th><th class="right">Valor</th><th>Arquivo</th><th class="right">Valor NF</th></tr></thead>
+        <tbody id="cp_tbody"></tbody>
+      </table>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -194,6 +219,7 @@ const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const $ = s => document.querySelector(s);
 const MESES = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
+const MESESFULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 const recLabel = {nenhuma:'',semanal:'Semanal',mensal:'Mensal',bimestral:'Bimestral',trimestral:'Trimestral',semestral:'Semestral',anual:'Anual'};
 const fmt  = v => (v==null?0:Number(v)).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
 const n0   = v => !v ? '-' : Number(v).toLocaleString('pt-BR',{maximumFractionDigits:0});
@@ -203,6 +229,7 @@ const esc  = s => (s==null?'':String(s)).replace(/[&<>]/g,m=>({'&':'&amp;','<':'
 function refDate(c){ return c.status==='pago' ? (c.data_pagamento||c.vencimento) : c.vencimento; }
 
 let CONTAS=[], CATS=[], catById={}, VIEW='fluxo', ANO=new Date().getFullYear(), BASE='tudo', MES='';
+let CP_MES='', CP_CONTA='', CP_FILTRO='';
 
 function toast(msg, err){ const t=document.createElement('div'); t.className='toast'+(err?' err':''); t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(), err?6000:3500); }
 
@@ -228,10 +255,51 @@ async function carregar(){
   anos.add(new Date().getFullYear());
   const arr=[...anos].sort();
   $('#fx_ano').innerHTML=arr.map(a=>`<option value="${a}" ${a===ANO?'selected':''}>${a}</option>`).join('');
+  // comprovantes: meses e contas disponiveis
+  const mesesSet=new Set(CONTAS.map(c=>{const r=refDate(c);return r?r.slice(0,7):null}).filter(Boolean));
+  mesesSet.add(new Date().toISOString().slice(0,7));
+  const mesesArr=[...mesesSet].sort().reverse();
+  if(!CP_MES || !mesesArr.includes(CP_MES)) CP_MES=mesesArr[0];
+  $('#cp_mes').innerHTML=mesesArr.map(m=>{const[y,mo]=m.split('-');return `<option value="${m}" ${m===CP_MES?'selected':''}>${MESESFULL[+mo-1]} ${y}</option>`;}).join('');
+  const contasSet=[...new Set(CONTAS.map(c=>c.conta).filter(Boolean))].sort();
+  $('#cp_conta').innerHTML='<option value="">Todas as contas</option>'+contasSet.map(c=>`<option value="${esc(c)}" ${c===CP_CONTA?'selected':''}>${esc(c)}</option>`).join('');
   render();
 }
 
-function render(){ if(VIEW==='fluxo') renderFluxo(); else renderLanc(); }
+function render(){ if(VIEW==='fluxo') renderFluxo(); else if(VIEW==='comp') renderComp(); else renderLanc(); }
+
+// ---- Comprovantes ----
+function temComp(c){ return !!(c.arquivo_nf || c.anexo_path); }
+function renderComp(){
+  let base=CONTAS.filter(c=>{ const r=refDate(c); return r && r.slice(0,7)===CP_MES; });
+  if(CP_CONTA) base=base.filter(c=>c.conta===CP_CONTA);
+  const com=base.filter(temComp).length, sem=base.length-com;
+  $('#cp_com').textContent=com; $('#cp_sem').textContent=sem;
+  $('#cp_pct').textContent=base.length?((com/base.length*100).toFixed(1)+'%'):'—';
+  let rows=base;
+  if(CP_FILTRO==='com') rows=base.filter(temComp);
+  else if(CP_FILTRO==='sem') rows=base.filter(c=>!temComp(c));
+  rows=rows.slice().sort((a,b)=>(refDate(a)<refDate(b)?-1:1));
+  $('#cp_count').textContent=`(${rows.length})`;
+  const tb=$('#cp_tbody');
+  if(!rows.length){ tb.innerHTML='<tr><td colspan="7" class="empty">Nenhuma transação neste mês/conta.</td></tr>'; return; }
+  tb.innerHTML=rows.map(c=>{
+    const cat=catById[c.categoria_id]; const catTxt=cat?((cat.codigo?cat.codigo+' ':'')+cat.nome):(c.categoria||'—');
+    const dt=(refDate(c)||'').split('-').reverse().join('/');
+    let arq='<span class="tag vencida">sem</span>';
+    if(c.arquivo_nf) arq=`<span class="muted" title="${esc(c.arquivo_nf)}">${esc(c.arquivo_nf)}</span>`;
+    else if(c.anexo_path) arq=`<a class="link" href="#" onclick="verAnexo('${c.anexo_path}');return false">ver anexo</a>`;
+    return `<tr><td>${dt}</td><td>${esc(c.descricao)}</td><td>${esc(catTxt)}</td><td>${esc(c.conta||'—')}</td><td class="right">${fmt(c.valor)}</td><td>${arq}</td><td class="right">${c.valor_nf!=null?fmt(c.valor_nf):'<span class="muted">—</span>'}</td></tr>`;
+  }).join('');
+}
+function exportCompCSV(){
+  let f=CONTAS.filter(c=>{const r=refDate(c);return r&&r.slice(0,7)===CP_MES;});
+  if(CP_CONTA) f=f.filter(c=>c.conta===CP_CONTA);
+  const head=['Data','Descrição','Categoria','Conta','Valor','Comprovante','Arquivo','Valor NF'];
+  const lines=f.map(c=>{const cat=catById[c.categoria_id];const ct=cat?((cat.codigo?cat.codigo+' ':'')+cat.nome):'';return [refDate(c),c.descricao,ct,c.conta||'',c.valor,temComp(c)?'SIM':'NAO',c.arquivo_nf||'',c.valor_nf!=null?c.valor_nf:''].map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(';');});
+  const csv='﻿'+[head.join(';'),...lines].join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='comprovantes_'+CP_MES+'.csv';a.click();
+}
 
 function renderFluxo(){
   const mat={}; CATS.forEach(c=>mat[c.id]=new Array(12).fill(0));
@@ -352,8 +420,13 @@ document.querySelectorAll('.nav button').forEach(b=>b.onclick=()=>{
   VIEW=b.dataset.view;
   $('#view_fluxo').style.display=VIEW==='fluxo'?'block':'none';
   $('#view_lanc').style.display=VIEW==='lanc'?'block':'none';
+  $('#view_comp').style.display=VIEW==='comp'?'block':'none';
   render();
 });
+$('#cp_mes').onchange=()=>{ CP_MES=$('#cp_mes').value; renderComp(); };
+$('#cp_conta').onchange=()=>{ CP_CONTA=$('#cp_conta').value; renderComp(); };
+$('#cp_filtro').onchange=()=>{ CP_FILTRO=$('#cp_filtro').value; renderComp(); };
+$('#cp_csv').onclick=exportCompCSV;
 $('#fx_ano').onchange=()=>{ ANO=+$('#fx_ano').value; renderFluxo(); };
 $('#fx_mes').onchange=()=>{ MES=$('#fx_mes').value; renderFluxo(); };
 $('#fx_base').onchange=()=>{ BASE=$('#fx_base').value; renderFluxo(); };
