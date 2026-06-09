@@ -1,10 +1,11 @@
-TESTE_PASTE_EVENT_123<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Coalize — Contas & Fluxo de Caixa</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
   :root{
     --bg:#f4f6f9; --panel:#ffffff; --panel2:#f1f3f7; --line:#e2e7ef;
@@ -115,14 +116,40 @@ TESTE_PASTE_EVENT_123<!DOCTYPE html>
 
 <div class="wrap" id="appwrap" style="display:none">
   <div class="nav">
-    <button data-view="fluxo" class="active">Fluxo de Caixa</button>
+    <button data-view="resumo" class="active">Resumo</button>
+    <button data-view="fluxo">Fluxo de Caixa</button>
     <button data-view="lanc">Lançamentos</button>
     <button data-view="comp">Comprovantes</button>
     <button data-view="forn">Fornecedores</button>
+    <button data-view="bancos">Bancos</button>
+  </div>
+
+  <!-- ===== RESUMO (dashboard) ===== -->
+  <div id="view_resumo">
+    <div class="row" style="margin-bottom:4px">
+      <div class="card tot" style="flex:1.4"><h3 id="r_hoje_data">Saldo em contas</h3><div class="big" id="r_saldo">—</div><div class="muted" id="r_saldo_sub" style="font-size:11px;margin-top:2px"></div></div>
+      <div class="card venc"><h3>Pagar hoje</h3><div class="big" id="r_hoje">—</div><div class="muted" id="r_hoje_qtd" style="font-size:11px"></div></div>
+      <div class="card venc"><h3>Vencidas</h3><div class="big" id="r_venc">—</div><div class="muted" id="r_venc_qtd" style="font-size:11px"></div></div>
+      <div class="card pagar"><h3>A vencer (15 dias)</h3><div class="big" id="r_avencer">—</div></div>
+    </div>
+    <div class="panel">
+      <h2>Saídas previstas x saldo projetado — próximos 15 dias</h2>
+      <div style="height:280px"><canvas id="r_chart"></canvas></div>
+    </div>
+    <div class="row">
+      <div class="panel" style="flex:1;min-width:300px;margin-top:16px">
+        <h2>Top categorias do mês</h2>
+        <table><thead><tr><th>Categoria</th><th class="right">Total</th></tr></thead><tbody id="r_cats"></tbody></table>
+      </div>
+      <div class="panel" style="flex:1;min-width:300px;margin-top:16px">
+        <h2>Maiores atrasos (vencidas)</h2>
+        <table><thead><tr><th>Venc.</th><th>Descrição</th><th class="right">Valor</th></tr></thead><tbody id="r_atrasos"></tbody></table>
+      </div>
+    </div>
   </div>
 
   <!-- ===== FLUXO DE CAIXA ===== -->
-  <div id="view_fluxo">
+  <div id="view_fluxo" style="display:none">
     <div class="toolbar">
       <div class="field"><label>Ano</label><select id="fx_ano"></select></div>
       <div class="field"><label>Mês</label>
@@ -216,6 +243,39 @@ TESTE_PASTE_EVENT_123<!DOCTYPE html>
       </table>
     </div>
   </div>
+
+  <!-- ===== BANCOS ===== -->
+  <div id="view_bancos" style="display:none">
+    <div class="toolbar">
+      <button class="btn" id="bc_novo">+ Novo banco</button>
+      <span class="muted" style="font-size:12px">Cadastre cada conta/banco e o saldo atual. A soma alimenta o "Saldo em contas" do Resumo.</span>
+    </div>
+    <div class="panel">
+      <h2>Bancos / Contas <span class="muted" id="bc_count"></span></h2>
+      <table id="bc_tabela">
+        <thead><tr><th>Nome</th><th>Tipo</th><th class="right">Saldo</th><th>Status</th><th class="right">Lançamentos</th><th></th></tr></thead>
+        <tbody id="bc_tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: BANCO ===== -->
+<div id="banco_modal" class="modal" style="display:none">
+  <div class="modal-box" style="max-width:560px">
+    <div class="modal-head"><h2 id="bc_titulo">Novo banco</h2><button class="modal-x" id="bc_close">×</button></div>
+    <div class="modal-body">
+      <div class="grid4" style="grid-template-columns:repeat(2,1fr)">
+        <div class="field"><label>Nome *</label><input id="bc_nome" placeholder="Ex: Banco Inter"></div>
+        <div class="field"><label>Tipo</label>
+          <select id="bc_tipo"><option value="">—</option><option>Conta corrente</option><option>Cartão de crédito</option><option>Plataforma de cobrança</option><option>Poupança</option><option>Caixa</option></select>
+        </div>
+        <div class="field"><label>Saldo atual (R$)</label><input id="bc_saldo" type="number" step="0.01" placeholder="0,00"></div>
+        <div class="field"><label>Status</label><select id="bc_ativo"><option value="true">Ativo</option><option value="false">Inativo</option></select></div>
+      </div>
+    </div>
+    <div class="modal-foot"><span id="bc_status" class="muted"></span><button class="btn-ghost" id="bc_voltar">Voltar</button><button class="btn" id="bc_salvar">Salvar</button></div>
+  </div>
 </div>
 
 <!-- ===== MODAL: FORNECEDOR ===== -->
@@ -302,10 +362,11 @@ const br=d=>d?d.split('-').reverse().join('/'):'—';
 function refDate(c){return c.status==='pago'?(c.data_pagamento||c.vencimento):c.vencimento;}
 function addMonths(iso,n){const[y,m,d]=iso.split('-').map(Number);const dt=new Date(y,m-1+n,d);return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');}
 
-let CONTAS=[],CATS=[],catById={},VIEW='fluxo',ANO=new Date().getFullYear(),BASE='tudo',MES='';
+let CONTAS=[],CATS=[],catById={},VIEW='resumo',ANO=new Date().getFullYear(),BASE='tudo',MES='';
+let BANCOS=[],BEDIT=null,rChart=null;
 let CP_MES='',CP_CONTA='',CP_FILTRO='';
 let LMES=new Date().toISOString().slice(0,7),LCONTA='',LBUSCA='',LSIT='';
-let FORNS=[],fornById={},FBUSCA='',FEDIT=null;
+let FORNS=[],fornById={},FBUSCA='',FEDIT=null,DEDIT=null;
 
 function toast(msg,err){const t=document.createElement('div');t.className='toast'+(err?' err':'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),err?6000:3500);}
 function catOptions(){let h='<option value="">(escolha a categoria)</option>',g=null;CATS.forEach(c=>{if(c.grupo!==g){if(g!==null)h+='</optgroup>';h+='<optgroup label="'+esc(c.grupo)+'">';g=c.grupo;}h+=`<option value="${c.id}">${esc((c.codigo?c.codigo+' ':'')+c.nome)}</option>`;});if(g!==null)h+='</optgroup>';return h;}
@@ -325,6 +386,8 @@ async function carregar(){
   const {data:forns}=await db.from('fornecedores').select('id,nome,cnpj,categoria_padrao_id,observacao').order('nome');
   FORNS=forns||[]; fornById={}; FORNS.forEach(f=>fornById[f.id]=f);
   $('#forn_list').innerHTML=FORNS.map(f=>`<option value="${esc(f.nome)}">`).join('');
+  const {data:bancos}=await db.from('bancos').select('*').order('ordem');
+  BANCOS=bancos||[];
   // anos (fluxo)
   const anos=new Set(CONTAS.map(c=>{const r=refDate(c);return r?+r.slice(0,4):null}).filter(Boolean));anos.add(new Date().getFullYear());
   $('#fx_ano').innerHTML=[...anos].sort().map(a=>`<option value="${a}" ${a===ANO?'selected':''}>${a}</option>`).join('');
@@ -349,7 +412,67 @@ async function carregar(){
   render();
 }
 
-function render(){if(VIEW==='fluxo')renderFluxo();else if(VIEW==='comp')renderComp();else if(VIEW==='forn')renderForn();else renderLanc();}
+function render(){if(VIEW==='fluxo')renderFluxo();else if(VIEW==='comp')renderComp();else if(VIEW==='forn')renderForn();else if(VIEW==='bancos')renderBancos();else if(VIEW==='resumo')renderResumo();else renderLanc();}
+
+// ---- Resumo (dashboard) ----
+function renderResumo(){
+  const t=today(), d=new Date();
+  const diasSem=['domingo','segunda','terça','quarta','quinta','sexta','sábado'];
+  $('#r_hoje_data').textContent='Saldo em contas · '+String(d.getDate()).padStart(2,'0')+' '+MESESFULL[d.getMonth()].toLowerCase()+', '+diasSem[d.getDay()];
+  const saldo=BANCOS.reduce((s,b)=>s+Number(b.saldo||0),0);
+  $('#r_saldo').textContent=fmt(saldo);
+  $('#r_saldo_sub').textContent=BANCOS.length+' conta(s) cadastrada(s)';
+  const aPagar=CONTAS.filter(c=>c.status==='a_pagar');
+  const hoje=aPagar.filter(c=>c.vencimento===t);
+  const venc=aPagar.filter(c=>c.vencimento<t);
+  const lim=addMonths(t,0); const d15=new Date(d.getFullYear(),d.getMonth(),d.getDate()+15).toISOString().slice(0,10);
+  const av=aPagar.filter(c=>c.vencimento>t&&c.vencimento<=d15);
+  const sum=a=>a.reduce((s,c)=>s+Number(c.valor),0);
+  $('#r_hoje').textContent=fmt(sum(hoje)); $('#r_hoje_qtd').textContent=hoje.length+' conta(s)';
+  $('#r_venc').textContent=fmt(sum(venc)); $('#r_venc_qtd').textContent=venc.length+' conta(s)';
+  $('#r_avencer').textContent=fmt(sum(av));
+  // gráfico próximos 15 dias
+  const labels=[], pagarDia=[], saldoProj=[]; let acc=saldo;
+  for(let i=0;i<15;i++){ const dt=new Date(d.getFullYear(),d.getMonth(),d.getDate()+i); const iso=dt.toISOString().slice(0,10);
+    const p=sum(aPagar.filter(c=>c.vencimento===iso)); labels.push(String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0')); pagarDia.push(p); acc-=p; saldoProj.push(Math.round(acc*100)/100); }
+  if(window.Chart){ if(rChart)rChart.destroy();
+    rChart=new Chart($('#r_chart'),{data:{labels,datasets:[
+      {type:'bar',label:'A pagar no dia',data:pagarDia,backgroundColor:'rgba(224,72,77,.5)',borderColor:'#e0484d',yAxisID:'y'},
+      {type:'line',label:'Saldo projetado',data:saldoProj,borderColor:'#2f6fed',backgroundColor:'rgba(47,111,237,.1)',tension:.25,fill:true,yAxisID:'y'}
+    ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'}},scales:{y:{ticks:{callback:v=>'R$ '+Number(v).toLocaleString('pt-BR',{maximumFractionDigits:0})}}}}});
+  }
+  // top categorias do mês (por refDate no mês corrente)
+  const mes=t.slice(0,7); const catMap={};
+  CONTAS.forEach(c=>{const r=refDate(c); if(r&&r.slice(0,7)===mes){const k=catTxt(c); catMap[k]=(catMap[k]||0)+Number(c.valor);}});
+  const catRows=Object.entries(catMap).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  $('#r_cats').innerHTML=catRows.length?catRows.map(([k,v])=>`<tr><td>${esc(k)}</td><td class="right">${fmt(v)}</td></tr>`).join(''):'<tr><td colspan="2" class="empty">Sem lançamentos no mês.</td></tr>';
+  // maiores atrasos
+  const atr=venc.slice().sort((a,b)=>b.valor-a.valor).slice(0,8);
+  $('#r_atrasos').innerHTML=atr.length?atr.map(c=>`<tr><td>${br(c.vencimento)}</td><td>${esc(c.descricao)}</td><td class="right">${fmt(c.valor)}</td></tr>`).join(''):'<tr><td colspan="3" class="empty">Nenhuma conta vencida 🎉</td></tr>';
+}
+
+// ---- Bancos ----
+function renderBancos(){
+  const cnt={};CONTAS.forEach(c=>{if(c.conta)cnt[c.conta]=(cnt[c.conta]||0)+1;});
+  $('#bc_count').textContent=`(${BANCOS.length})`;
+  const tb=$('#bc_tbody');
+  if(!BANCOS.length){tb.innerHTML='<tr><td colspan="6" class="empty">Nenhum banco cadastrado.</td></tr>';return;}
+  tb.innerHTML=BANCOS.map(b=>`<tr><td>${esc(b.nome)}</td><td>${esc(b.tipo||'—')}</td><td class="right">${fmt(b.saldo)}</td><td>${b.ativo?'<span class="tag pago">Ativo</span>':'<span class="tag vencida">Inativo</span>'}</td><td class="right">${cnt[b.nome]||0}</td><td class="right"><button class="btn-ghost btn-sm" onclick="abrirBanco('${b.id}')">Editar</button> <button class="btn-del btn-sm" onclick="excluirBanco('${b.id}')">✕</button></td></tr>`).join('');
+}
+function abrirBanco(id){BEDIT=id||null;const b=id?BANCOS.find(x=>x.id===id):null;$('#bc_titulo').textContent=id?'Editar banco':'Novo banco';
+  $('#bc_nome').value=b?b.nome:'';$('#bc_tipo').value=b&&b.tipo?b.tipo:'';$('#bc_saldo').value=b?b.saldo:'';$('#bc_ativo').value=b?String(b.ativo):'true';$('#bc_status').textContent='';
+  $('#banco_modal').style.display='flex';}
+function fecharBanco(){$('#banco_modal').style.display='none';}
+async function salvarBanco(){
+  const nome=$('#bc_nome').value.trim();if(!nome){toast('Informe o nome.',true);return;}
+  $('#bc_status').innerHTML='<span class="spin"></span> salvando…';
+  const payload={nome,tipo:$('#bc_tipo').value||null,saldo:parseFloat($('#bc_saldo').value)||0,ativo:$('#bc_ativo').value==='true'};
+  try{let error;if(BEDIT){({error}=await db.from('bancos').update(payload).eq('id',BEDIT));}else{({error}=await db.from('bancos').insert(payload));}
+    if(error)throw error;toast('Banco salvo ✓');fecharBanco();await carregar();
+  }catch(e){$('#bc_status').textContent='';toast('Erro: '+e.message,true);}
+}
+async function excluirBanco(id){if(!confirm('Excluir este banco?'))return;const{error}=await db.from('bancos').delete().eq('id',id);if(error){toast('Erro: '+error.message,true);return;}toast('Banco excluído.');await carregar();}
+window.abrirBanco=abrirBanco;window.excluirBanco=excluirBanco;
 
 // ---- Fornecedores ----
 function renderForn(){
@@ -418,7 +541,7 @@ function renderLanc(){
     return `<tr><td>${br(c.vencimento)}</td><td>${br(c.data_pagamento)}</td>
       <td class="resumo">${esc(c.descricao)}${rec}<br><span class="chip">${esc(catTxt(c))}</span> <small>${esc(c.fornecedor||'')}</small></td>
       <td>${esc(c.conta||'—')}</td><td class="right">${fmt(c.valor)}</td><td><span class="tag ${cls}">${lbl}</span></td>
-      <td>${anexo}</td><td class="right">${acao} <button class="btn-del btn-sm" onclick="excluir('${c.id}')">✕</button></td></tr>`;
+      <td>${anexo}</td><td class="right"><button class="btn-ghost btn-sm" onclick="abrirDespesa('${c.id}')">Editar</button> ${acao} <button class="btn-del btn-sm" onclick="excluir('${c.id}')">✕</button></td></tr>`;
   }).join('');
 }
 
@@ -439,12 +562,26 @@ function renderComp(){
 }
 
 // ---- Nova despesa (modal) ----
-function abrirDespesa(){
-  $('#d_forn').value='';$('#d_comp').value=today();$('#d_desc').value='';$('#d_valor').value='';
-  $('#d_cat').value='';$('#d_cc').value='';$('#d_ref').value='';$('#d_parc').value='1';$('#d_venc').value=today();
-  $('#d_forma').value='';$('#d_conta').value='';$('#d_rec').value='nenhuma';$('#d_pago').checked=false;$('#d_obs').value='';$('#d_anexo').value='';$('#d_status').textContent='';
+function abrirDespesa(id){
+  DEDIT=id||null;
+  const c=id?CONTAS.find(x=>x.id===id):null;
+  $('#d_titulo').textContent=id?'Editar lançamento':'Nova despesa';
+  $('#d_parc').closest('.field').style.display=id?'none':'';
+  if(c){
+    $('#d_forn').value=c.fornecedor||'';$('#d_comp').value=c.data_competencia||c.vencimento||today();
+    $('#d_desc').value=c.descricao||'';$('#d_valor').value=c.valor;$('#d_cat').value=c.categoria_id||'';
+    $('#d_cc').value=c.centro_custo||'';$('#d_ref').value=c.codigo_referencia||'';$('#d_parc').value='1';
+    $('#d_venc').value=c.vencimento||today();$('#d_forma').value=c.forma_pagamento||'';$('#d_conta').value=c.conta||'';
+    $('#d_rec').value=c.recorrencia||'nenhuma';$('#d_pago').checked=c.status==='pago';$('#d_obs').value=c.observacao||'';
+  }else{
+    $('#d_forn').value='';$('#d_comp').value=today();$('#d_desc').value='';$('#d_valor').value='';
+    $('#d_cat').value='';$('#d_cc').value='';$('#d_ref').value='';$('#d_parc').value='1';$('#d_venc').value=today();
+    $('#d_forma').value='';$('#d_conta').value='';$('#d_rec').value='nenhuma';$('#d_pago').checked=false;$('#d_obs').value='';
+  }
+  $('#d_anexo').value='';$('#d_status').textContent='';
   $('#despesa_modal').style.display='flex';
 }
+window.abrirDespesa=abrirDespesa;
 function fecharDespesa(){$('#despesa_modal').style.display='none';}
 async function salvarDespesa(){
   const desc=$('#d_desc').value.trim(),valor=parseFloat($('#d_valor').value),venc=$('#d_venc').value,cat=$('#d_cat').value;
@@ -457,20 +594,30 @@ async function salvarDespesa(){
       if(ex&&ex.length)forn_id=ex[0].id;else{const{data,error}=await db.from('fornecedores').insert({nome:fnome}).select().single();if(error)throw error;forn_id=data.id;}}
     let anexo_path=null;const file=$('#d_anexo').files[0];
     if(file){const path=Date.now()+'_'+file.name.replace(/[^\w.\-]/g,'_');const{error}=await db.storage.from('anexos').upload(path,file);if(error)throw error;anexo_path=path;}
-    const N=parseInt($('#d_parc').value)||1;
     const comp=$('#d_comp').value||venc,forma=$('#d_forma').value||null,conta=$('#d_conta').value||null;
     const ref=$('#d_ref').value.trim()||null,cc=$('#d_cc').value.trim()||null,obs=$('#d_obs').value.trim()||null;
-    const rec=N>1?'nenhuma':$('#d_rec').value;const pago=$('#d_pago').checked&&N===1;
-    const rows=[];
-    for(let i=0;i<N;i++){
-      const vp=N>1?Math.round(valor/N*100)/100:valor;
-      rows.push({descricao:N>1?`${desc} (${i+1}/${N})`:desc,fornecedor_id:forn_id,categoria_id:cat,valor:vp,
-        vencimento:addMonths(venc,i),data_competencia:comp,data_pagamento:pago?venc:null,status:pago?'pago':'a_pagar',
-        recorrencia:rec,forma_pagamento:forma,conta:conta,codigo_referencia:ref,centro_custo:cc,observacao:obs,
-        anexo_path:i===0?anexo_path:null,origem:'manual'});
+    const pagoChk=$('#d_pago').checked;
+    if(DEDIT){
+      const atual=CONTAS.find(x=>x.id===DEDIT)||{};
+      const payload={descricao:desc,fornecedor_id:forn_id,categoria_id:cat,valor,vencimento:venc,data_competencia:comp,
+        recorrencia:$('#d_rec').value,forma_pagamento:forma,conta:conta,codigo_referencia:ref,centro_custo:cc,observacao:obs,
+        status:pagoChk?'pago':'a_pagar',data_pagamento:pagoChk?(atual.data_pagamento||today()):null};
+      if(anexo_path)payload.anexo_path=anexo_path;
+      const{error}=await db.from('contas').update(payload).eq('id',DEDIT);if(error)throw error;
+      toast('Lançamento atualizado ✓');
+    }else{
+      const N=parseInt($('#d_parc').value)||1;
+      const rec=N>1?'nenhuma':$('#d_rec').value;const pago=pagoChk&&N===1;
+      const rows=[];
+      for(let i=0;i<N;i++){const vp=N>1?Math.round(valor/N*100)/100:valor;
+        rows.push({descricao:N>1?`${desc} (${i+1}/${N})`:desc,fornecedor_id:forn_id,categoria_id:cat,valor:vp,
+          vencimento:addMonths(venc,i),data_competencia:comp,data_pagamento:pago?venc:null,status:pago?'pago':'a_pagar',
+          recorrencia:rec,forma_pagamento:forma,conta:conta,codigo_referencia:ref,centro_custo:cc,observacao:obs,
+          anexo_path:i===0?anexo_path:null,origem:'manual'});}
+      const{error}=await db.from('contas').insert(rows);if(error)throw error;
+      toast(N>1?`Despesa lançada em ${N}×.`:'Despesa lançada ✓');
     }
-    const{error}=await db.from('contas').insert(rows);if(error)throw error;
-    toast(N>1?`Despesa lançada em ${N}×.`:'Despesa lançada ✓');fecharDespesa();await carregar();
+    fecharDespesa();await carregar();
   }catch(e){$('#d_status').textContent='';toast('Erro: '+e.message,true);}
 }
 
@@ -485,7 +632,9 @@ function expLanc(){const mes=CONTAS.filter(c=>c.vencimento&&c.vencimento.slice(0
 function expComp(){let f=CONTAS.filter(c=>{const r=refDate(c);return r&&r.slice(0,7)===CP_MES;});if(CP_CONTA)f=f.filter(c=>c.conta===CP_CONTA);exportCSV(f,['Data','Descrição','Categoria','Conta','Valor','Comprovante','Arquivo','Valor NF'],c=>[refDate(c),c.descricao,catTxt(c),c.conta||'',c.valor,temComp(c)?'SIM':'NAO',c.arquivo_nf||'',c.valor_nf!=null?c.valor_nf:''],'comprovantes_'+CP_MES+'.csv');}
 
 // nav + eventos
-document.querySelectorAll('.nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');VIEW=b.dataset.view;$('#view_fluxo').style.display=VIEW==='fluxo'?'block':'none';$('#view_lanc').style.display=VIEW==='lanc'?'block':'none';$('#view_comp').style.display=VIEW==='comp'?'block':'none';$('#view_forn').style.display=VIEW==='forn'?'block':'none';render();});
+document.querySelectorAll('.nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');VIEW=b.dataset.view;$('#view_fluxo').style.display=VIEW==='fluxo'?'block':'none';$('#view_lanc').style.display=VIEW==='lanc'?'block':'none';$('#view_comp').style.display=VIEW==='comp'?'block':'none';$('#view_forn').style.display=VIEW==='forn'?'block':'none';$('#view_resumo').style.display=VIEW==='resumo'?'block':'none';$('#view_bancos').style.display=VIEW==='bancos'?'block':'none';render();});
+$('#bc_novo').onclick=()=>abrirBanco(null);
+$('#bc_close').onclick=fecharBanco;$('#bc_voltar').onclick=fecharBanco;$('#bc_salvar').onclick=salvarBanco;
 $('#fn_busca').oninput=()=>{FBUSCA=$('#fn_busca').value;renderForn();};
 $('#fn_novo').onclick=()=>abrirForn(null);
 $('#fn_close').onclick=fecharForn;$('#fn_voltar').onclick=fecharForn;$('#fn_salvar').onclick=salvarForn;
