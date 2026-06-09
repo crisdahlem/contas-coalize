@@ -402,8 +402,8 @@ async function carregar(){
   $('#cp_conta').innerHTML=contaOpts;
   $('#l_conta').innerHTML=contaOpts;
   // conta de pagamento (modal): bancos conhecidos + os existentes
-  const bancos=[...new Set(['Cora','Asaas','Conta Simples','Banco Inter',...cset])];
-  $('#d_conta').innerHTML='<option value="">(escolha)</option>'+bancos.map(b=>`<option value="${esc(b)}">${esc(b)}</option>`).join('');
+  const bancoNomes=[...new Set(['Cora','Asaas','Conta Simples','Banco Inter',...cset])];
+  $('#d_conta').innerHTML='<option value="">(escolha)</option>'+bancoNomes.map(b=>`<option value="${esc(b)}">${esc(b)}</option>`).join('');
   // meses lançamentos
   const lset=new Set(CONTAS.map(c=>c.vencimento?c.vencimento.slice(0,7):null).filter(Boolean));lset.add(new Date().toISOString().slice(0,7));
   const larr=[...lset].sort().reverse();
