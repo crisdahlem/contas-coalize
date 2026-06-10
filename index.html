@@ -68,6 +68,8 @@
   table.fx tr.grp td:first-child{background:var(--grp)}
   table.fx tr.tot td{background:#eaf5ef;font-weight:700;color:var(--accent)}
   table.fx tr.tot td:first-child{background:#eaf5ef}
+  table.fx tr.sld td{background:#e7eefb;font-weight:700;color:var(--blue)}
+  table.fx tr.sld td:first-child{background:#e7eefb}
   table.fx .code{color:var(--muted);margin-right:6px}
   table.fx td.cur{color:var(--txt)} table.fx td.zero{color:#b3bbc7}
   /* modal */
@@ -163,8 +165,8 @@
       </div>
       <div class="field"><label>Base</label>
         <select id="fx_base">
+          <option value="pago" selected>Só pago / baixado (caixa real)</option>
           <option value="tudo">Tudo (pago + a pagar)</option>
-          <option value="pago">Só pago (realizado)</option>
           <option value="apagar">Só a pagar (previsto)</option>
         </select>
       </div>
@@ -253,7 +255,7 @@
     <div class="panel">
       <h2>Bancos / Contas <span class="muted" id="bc_count"></span></h2>
       <table id="bc_tabela">
-        <thead><tr><th>Nome</th><th>Tipo</th><th class="right">Saldo</th><th>Status</th><th class="right">Lançamentos</th><th></th></tr></thead>
+        <thead><tr><th>Nome</th><th>Tipo</th><th class="right">Saldo inicial</th><th class="right">Pago (saídas)</th><th class="right">Saldo final</th><th>Status</th><th class="right">Lanç.</th><th></th></tr></thead>
         <tbody id="bc_tbody"></tbody>
       </table>
     </div>
@@ -270,7 +272,7 @@
         <div class="field"><label>Tipo</label>
           <select id="bc_tipo"><option value="">—</option><option>Conta corrente</option><option>Cartão de crédito</option><option>Plataforma de cobrança</option><option>Poupança</option><option>Caixa</option></select>
         </div>
-        <div class="field"><label>Saldo atual (R$)</label><input id="bc_saldo" type="number" step="0.01" placeholder="0,00"></div>
+        <div class="field"><label>Saldo inicial (R$)</label><input id="bc_saldo" type="number" step="0.01" placeholder="0,00"></div>
         <div class="field"><label>Status</label><select id="bc_ativo"><option value="true">Ativo</option><option value="false">Inativo</option></select></div>
       </div>
     </div>
@@ -344,6 +346,19 @@
   </div>
 </div>
 
+<!-- ===== MODAL: VISUALIZAR COMPROVANTE (PDF) ===== -->
+<div id="pdf_modal" class="modal" style="display:none">
+  <div class="modal-box" style="max-width:920px;width:92%;height:88vh;display:flex;flex-direction:column">
+    <div class="modal-head"><h2 id="pdf_titulo">Comprovante</h2>
+      <div style="display:flex;align-items:center;gap:14px">
+        <a id="pdf_newtab" class="link" target="_blank" rel="noopener" style="font-size:13px">Abrir em nova aba ↗</a>
+        <button class="modal-x" id="pdf_close">×</button>
+      </div>
+    </div>
+    <div style="flex:1;background:#fff;border-radius:0 0 14px 14px;overflow:hidden"><iframe id="pdf_frame" title="Comprovante" style="width:100%;height:100%;border:0"></iframe></div>
+  </div>
+</div>
+
 <script>
 const SUPABASE_URL="https://qvceorcngqsygasiivbn.supabase.co";
 const SUPABASE_KEY="sb_publishable_EXiaEiULuThk97lPa76F6A_7VntzxxW";
@@ -362,7 +377,7 @@ const br=d=>d?d.split('-').reverse().join('/'):'—';
 function refDate(c){return c.status==='pago'?(c.data_pagamento||c.vencimento):c.vencimento;}
 function addMonths(iso,n){const[y,m,d]=iso.split('-').map(Number);const dt=new Date(y,m-1+n,d);return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');}
 
-let CONTAS=[],CATS=[],catById={},VIEW='resumo',ANO=new Date().getFullYear(),BASE='tudo',MES='';
+let CONTAS=[],CATS=[],catById={},VIEW='resumo',ANO=new Date().getFullYear(),BASE='pago',MES='';
 let BANCOS=[],BEDIT=null,rChart=null;
 let CP_MES='',CP_CONTA='',CP_FILTRO='';
 let LMES=new Date().toISOString().slice(0,7),LCONTA='',LBUSCA='',LSIT='';
@@ -419,9 +434,11 @@ function renderResumo(){
   const t=today(), d=new Date();
   const diasSem=['domingo','segunda','terça','quarta','quinta','sexta','sábado'];
   $('#r_hoje_data').textContent='Saldo em contas · '+String(d.getDate()).padStart(2,'0')+' '+MESESFULL[d.getMonth()].toLowerCase()+', '+diasSem[d.getDay()];
-  const saldo=BANCOS.reduce((s,b)=>s+Number(b.saldo||0),0);
+  const totalPago=CONTAS.filter(c=>c.status==='pago').reduce((s,c)=>s+Number(c.valor),0);
+  const saldoIni=BANCOS.reduce((s,b)=>s+Number(b.saldo||0),0);
+  const saldo=saldoIni-totalPago;
   $('#r_saldo').textContent=fmt(saldo);
-  $('#r_saldo_sub').textContent=BANCOS.length+' conta(s) cadastrada(s)';
+  $('#r_saldo_sub').textContent='inicial '+fmt(saldoIni)+' − pago '+fmt(totalPago);
   const aPagar=CONTAS.filter(c=>c.status==='a_pagar');
   const hoje=aPagar.filter(c=>c.vencimento===t);
   const venc=aPagar.filter(c=>c.vencimento<t);
@@ -453,11 +470,12 @@ function renderResumo(){
 
 // ---- Bancos ----
 function renderBancos(){
-  const cnt={};CONTAS.forEach(c=>{if(c.conta)cnt[c.conta]=(cnt[c.conta]||0)+1;});
+  const cnt={},pago={};CONTAS.forEach(c=>{if(c.conta){cnt[c.conta]=(cnt[c.conta]||0)+1;if(c.status==='pago')pago[c.conta]=(pago[c.conta]||0)+Number(c.valor);}});
   $('#bc_count').textContent=`(${BANCOS.length})`;
   const tb=$('#bc_tbody');
-  if(!BANCOS.length){tb.innerHTML='<tr><td colspan="6" class="empty">Nenhum banco cadastrado.</td></tr>';return;}
-  tb.innerHTML=BANCOS.map(b=>`<tr><td>${esc(b.nome)}</td><td>${esc(b.tipo||'—')}</td><td class="right">${fmt(b.saldo)}</td><td>${b.ativo?'<span class="tag pago">Ativo</span>':'<span class="tag vencida">Inativo</span>'}</td><td class="right">${cnt[b.nome]||0}</td><td class="right"><button class="btn-ghost btn-sm" onclick="abrirBanco('${b.id}')">Editar</button> <button class="btn-del btn-sm" onclick="excluirBanco('${b.id}')">✕</button></td></tr>`).join('');
+  if(!BANCOS.length){tb.innerHTML='<tr><td colspan="8" class="empty">Nenhum banco cadastrado.</td></tr>';return;}
+  tb.innerHTML=BANCOS.map(b=>{const pg=pago[b.nome]||0;const fimb=Number(b.saldo||0)-pg;
+    return `<tr><td>${esc(b.nome)}</td><td>${esc(b.tipo||'—')}</td><td class="right">${fmt(b.saldo)}</td><td class="right">${pg?fmt(pg):'—'}</td><td class="right"><b>${fmt(fimb)}</b></td><td>${b.ativo?'<span class="tag pago">Ativo</span>':'<span class="tag vencida">Inativo</span>'}</td><td class="right">${cnt[b.nome]||0}</td><td class="right"><button class="btn-ghost btn-sm" onclick="abrirBanco('${b.id}')">Editar</button> <button class="btn-del btn-sm" onclick="excluirBanco('${b.id}')">✕</button></td></tr>`;}).join('');
 }
 function abrirBanco(id){BEDIT=id||null;const b=id?BANCOS.find(x=>x.id===id):null;$('#bc_titulo').textContent=id?'Editar banco':'Novo banco';
   $('#bc_nome').value=b?b.nome:'';$('#bc_tipo').value=b&&b.tipo?b.tipo:'';$('#bc_saldo').value=b?b.saldo:'';$('#bc_ativo').value=b?String(b.ativo):'true';$('#bc_status').textContent='';
@@ -507,12 +525,21 @@ function renderFluxo(){
   const mat={};CATS.forEach(c=>mat[c.id]=new Array(12).fill(0));
   CONTAS.forEach(c=>{if(BASE==='pago'&&c.status!=='pago')return;if(BASE==='apagar'&&c.status!=='a_pagar')return;const r=refDate(c);if(!r||+r.slice(0,4)!==ANO)return;const m=+r.slice(5,7)-1;if(mat[c.categoria_id])mat[c.categoria_id][m]+=Number(c.valor);});
   const cols=MES===''?[...Array(12).keys()]:[+MES];const showTot=cols.length>1;const sc=a=>cols.reduce((s,i)=>s+a[i],0);
-  let head='<thead><tr><th>CATEGORIA</th>'+cols.map(i=>`<th>${MESES[i]}.${ANO}</th>`).join('')+(showTot?'<th>TOTAL</th>':'')+'</tr></thead>';
-  let body='<tbody>';const grand=new Array(12).fill(0);let g=null,gtot=null,grp='';
-  const flush=()=>{if(g!==null){body+=`<tr class="grp"><td>${esc(g)}</td>`+cols.map(i=>`<td>${gtot[i]?rs0(gtot[i]):'-'}</td>`).join('')+(showTot?`<td>${rs0(sc(gtot))}</td>`:'')+`</tr>`+grp;}};
+  const grand=new Array(12).fill(0);
+  let groupsHtml='',g=null,gtot=null,grp='';
+  const flush=()=>{if(g!==null){groupsHtml+=`<tr class="grp"><td>${esc(g)}</td>`+cols.map(i=>`<td>${gtot[i]?rs0(gtot[i]):'-'}</td>`).join('')+(showTot?`<td>${rs0(sc(gtot))}</td>`:'')+`</tr>`+grp;}};
   CATS.forEach(c=>{if(c.grupo!==g){flush();g=c.grupo;gtot=new Array(12).fill(0);grp='';}const row=mat[c.id];row.forEach((v,i)=>{gtot[i]+=v;grand[i]+=v;});const rt=sc(row);grp+=`<tr><td><span class="code">${esc(c.codigo||'')}</span>${esc(c.nome)}</td>`+cols.map(i=>`<td class="${row[i]?'cur':'zero'}">${n0(row[i])}</td>`).join('')+(showTot?`<td class="${rt?'cur':'zero'}">${n0(rt)}</td>`:'')+`</tr>`;});
   flush();
-  body+=`<tr class="tot"><td>TOTAL GERAL</td>`+cols.map(i=>`<td>${grand[i]?rs0(grand[i]):'-'}</td>`).join('')+(showTot?`<td>${rs0(sc(grand))}</td>`:'')+`</tr></tbody>`;
+  const base=BANCOS.reduce((s,b)=>s+Number(b.saldo||0),0);
+  const ini=new Array(12),fim=new Array(12);
+  for(let i=0;i<12;i++){ini[i]=i===0?base:fim[i-1];fim[i]=ini[i]-grand[i];}
+  let head='<thead><tr><th>CATEGORIA</th>'+cols.map(i=>`<th>${MESES[i]}.${ANO}</th>`).join('')+(showTot?'<th>TOTAL</th>':'')+'</tr></thead>';
+  let body='<tbody>';
+  body+=`<tr class="sld"><td>SALDO INICIAL</td>`+cols.map(i=>`<td>${rs0(ini[i])}</td>`).join('')+(showTot?'<td>—</td>':'')+`</tr>`;
+  body+=groupsHtml;
+  body+=`<tr class="tot"><td>TOTAL DESPESAS PAGAS</td>`+cols.map(i=>`<td>${grand[i]?rs0(grand[i]):'-'}</td>`).join('')+(showTot?`<td>${rs0(sc(grand))}</td>`:'')+`</tr>`;
+  body+=`<tr class="sld"><td>SALDO FINAL</td>`+cols.map(i=>`<td>${rs0(fim[i])}</td>`).join('')+(showTot?'<td>—</td>':'')+`</tr>`;
+  body+='</tbody>';
   $('#fx_tabela').innerHTML=head+body;
 }
 
@@ -624,7 +651,8 @@ async function salvarDespesa(){
 async function pagar(id){const c=CONTAS.find(x=>x.id===id);const{error}=await db.from('contas').update({status:'pago',data_pagamento:today()}).eq('id',id);if(error){toast('Erro: '+error.message,true);return;}if(c&&c.recorrencia&&c.recorrencia!=='nenhuma')toast('Baixa dada ✓ Próxima parcela ('+recLabel[c.recorrencia].toLowerCase()+') gerada.');else toast('Baixa dada ✓');await carregar();}
 async function desfazer(id){const{error}=await db.from('contas').update({status:'a_pagar',data_pagamento:null}).eq('id',id);if(error){toast('Erro: '+error.message,true);return;}toast('Conta reaberta.');await carregar();}
 async function excluir(id){if(!confirm('Excluir esta conta?'))return;const{error}=await db.from('contas').delete().eq('id',id);if(error){toast('Erro: '+error.message,true);return;}toast('Conta excluída.');await carregar();}
-async function verAnexo(path){const{data,error}=await db.storage.from('anexos').createSignedUrl(path,3600);if(error){toast('Erro: '+error.message,true);return;}window.open(data.signedUrl,'_blank');}
+async function verAnexo(path){const{data,error}=await db.storage.from('anexos').createSignedUrl(path,3600);if(error){toast('Erro: '+error.message,true);return;}$('#pdf_frame').src=data.signedUrl;$('#pdf_newtab').href=data.signedUrl;$('#pdf_titulo').textContent=(path.split('/').pop()||'Comprovante');$('#pdf_modal').style.display='flex';}
+function fecharPdf(){$('#pdf_frame').src='about:blank';$('#pdf_modal').style.display='none';}
 window.pagar=pagar;window.desfazer=desfazer;window.excluir=excluir;window.verAnexo=verAnexo;
 
 function exportCSV(rows,head,mapfn,fname){const lines=rows.map(c=>mapfn(c).map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(';'));const csv='﻿'+[head.join(';'),...lines].join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download=fname;a.click();}
@@ -635,6 +663,8 @@ function expComp(){let f=CONTAS.filter(c=>{const r=refDate(c);return r&&r.slice(
 document.querySelectorAll('.nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');VIEW=b.dataset.view;$('#view_fluxo').style.display=VIEW==='fluxo'?'block':'none';$('#view_lanc').style.display=VIEW==='lanc'?'block':'none';$('#view_comp').style.display=VIEW==='comp'?'block':'none';$('#view_forn').style.display=VIEW==='forn'?'block':'none';$('#view_resumo').style.display=VIEW==='resumo'?'block':'none';$('#view_bancos').style.display=VIEW==='bancos'?'block':'none';render();});
 $('#bc_novo').onclick=()=>abrirBanco(null);
 $('#bc_close').onclick=fecharBanco;$('#bc_voltar').onclick=fecharBanco;$('#bc_salvar').onclick=salvarBanco;
+$('#pdf_close').onclick=fecharPdf;
+$('#pdf_modal').addEventListener('click',e=>{if(e.target.id==='pdf_modal')fecharPdf();});
 $('#fn_busca').oninput=()=>{FBUSCA=$('#fn_busca').value;renderForn();};
 $('#fn_novo').onclick=()=>abrirForn(null);
 $('#fn_close').onclick=fecharForn;$('#fn_voltar').onclick=fecharForn;$('#fn_salvar').onclick=salvarForn;
