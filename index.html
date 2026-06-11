@@ -188,7 +188,7 @@
       </div>
       <div class="field" style="flex:1;min-width:200px"><label>Pesquisar</label><input id="l_busca" placeholder="Descrição ou fornecedor"></div>
       <div class="field"><label>Conta</label><select id="l_conta"><option value="">Todas as contas</option></select></div>
-      <div class="field"><label>Situação</label><select id="l_sit"><option value="">Todas</option><option value="aberto">Em aberto</option><option value="vencido">Vencido</option><option value="hoje">Vence hoje</option><option value="pago">Pago</option></select></div>
+      <div class="field"><label>Situação</label><select id="l_sit"><option value="">Todas</option><option value="aberto">Em aberto</option><option value="vencida">Vencido</option><option value="hoje">Vence hoje</option><option value="pago">Pago</option></select></div>
       <button class="btn" id="l_nova">+ Nova despesa</button>
       <button class="btn-ghost" id="l_csv">Exportar CSV</button>
     </div>
@@ -710,7 +710,7 @@ $('#l_next').onclick=()=>{const o=[...$('#l_mes').options].map(x=>x.value);const
 $('#l_conta').onchange=()=>{LCONTA=$('#l_conta').value;renderLanc();};
 $('#l_busca').oninput=()=>{LBUSCA=$('#l_busca').value;renderLanc();};
 $('#l_sit').onchange=()=>{LSIT=$('#l_sit').value;renderLanc();};
-$('#l_nova').onclick=abrirDespesa;$('#l_csv').onclick=expLanc;
+$('#l_nova').onclick=()=>abrirDespesa();$('#l_csv').onclick=expLanc;
 $('#d_close').onclick=fecharDespesa;$('#d_voltar').onclick=fecharDespesa;$('#d_salvar').onclick=salvarDespesa;
 $('#cp_mes').onchange=()=>{CP_MES=$('#cp_mes').value;renderComp();};
 $('#cp_conta').onchange=()=>{CP_CONTA=$('#cp_conta').value;renderComp();};
