@@ -186,6 +186,14 @@
           <button class="btn-ghost btn-sm" id="l_next">›</button>
         </div>
       </div>
+      <div class="field"><label>Período personalizado (por pagamento)</label>
+        <div style="display:flex;gap:4px;align-items:center">
+          <input type="date" id="l_de" title="De" style="min-width:120px">
+          <span class="muted">a</span>
+          <input type="date" id="l_ate" title="Até" style="min-width:120px">
+          <button class="btn-ghost btn-sm" id="l_limpar" title="Limpar período">✕</button>
+        </div>
+      </div>
       <div class="field" style="flex:1;min-width:200px"><label>Pesquisar</label><input id="l_busca" placeholder="Descrição ou fornecedor"></div>
       <div class="field"><label>Conta</label><select id="l_conta"><option value="">Todas as contas</option></select></div>
       <div class="field"><label>Situação</label><select id="l_sit"><option value="">Todas</option><option value="aberto">Em aberto</option><option value="vencida">Vencido</option><option value="hoje">Vence hoje</option><option value="pago">Pago</option></select></div>
@@ -383,7 +391,7 @@ function addMonths(iso,n){const[y,m,d]=iso.split('-').map(Number);const dt=new D
 let CONTAS=[],CATS=[],catById={},VIEW='resumo',ANO=new Date().getFullYear(),BASE='pago',MES='';
 let BANCOS=[],BEDIT=null,rChart=null;
 let CP_MES='',CP_CONTA='',CP_FILTRO='';
-let LMES=new Date().toISOString().slice(0,7),LCONTA='',LBUSCA='',LSIT='';
+let LMES=new Date().toISOString().slice(0,7),LCONTA='',LBUSCA='',LSIT='',LDE='',LATE='';
 let FORNS=[],fornById={},FBUSCA='',FEDIT=null,DEDIT=null;
 
 function toast(msg,err){const t=document.createElement('div');t.className='toast'+(err?' err':'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),err?6000:3500);}
@@ -551,9 +559,16 @@ function renderFluxo(){
 }
 
 function situacao(c){if(c.status==='pago')return['pago','Pago'];const t=today();if(c.vencimento<t)return['vencida','Vencido'];if(c.vencimento===t)return['hoje','Vence hoje'];return['apagar','Em aberto'];}
+function lancBase(){
+  // Período personalizado (De/Até) filtra por DATA DE PAGAMENTO; senão, pelo mês de vencimento (LMES).
+  if(LDE||LATE)return CONTAS.filter(c=>{const d=c.data_pagamento;if(!d)return false;if(LDE&&d<LDE)return false;if(LATE&&d>LATE)return false;return(!LCONTA||c.conta===LCONTA);});
+  return CONTAS.filter(c=>c.vencimento&&c.vencimento.slice(0,7)===LMES&&(!LCONTA||c.conta===LCONTA));
+}
 function renderLanc(){
   const t=today();
-  const mes=CONTAS.filter(c=>c.vencimento&&c.vencimento.slice(0,7)===LMES&&(!LCONTA||c.conta===LCONTA));
+  const rng=!!(LDE||LATE);
+  $('#l_mes').disabled=rng;$('#l_prev').disabled=rng;$('#l_next').disabled=rng;
+  const mes=lancBase();
   const sum=f=>f.reduce((s,c)=>s+Number(c.valor),0);
   $('#k_vencidos').textContent=fmt(sum(mes.filter(c=>c.status==='a_pagar'&&c.vencimento<t)));
   $('#k_hoje').textContent=fmt(sum(mes.filter(c=>c.status==='a_pagar'&&c.vencimento===t)));
@@ -697,7 +712,7 @@ function fecharPdf(){$('#pdf_pages').innerHTML='';$('#pdf_modal').style.display=
 window.pagar=pagar;window.desfazer=desfazer;window.excluir=excluir;window.verAnexo=verAnexo;
 
 function exportCSV(rows,head,mapfn,fname){const lines=rows.map(c=>mapfn(c).map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(';'));const csv='﻿'+[head.join(';'),...lines].join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download=fname;a.click();}
-function expLanc(){const mes=CONTAS.filter(c=>c.vencimento&&c.vencimento.slice(0,7)===LMES&&(!LCONTA||c.conta===LCONTA));exportCSV(mes,['Vencimento','Pagamento','Descrição','Categoria','Conta','Valor','Situação'],c=>[c.vencimento,c.data_pagamento||'',c.descricao,catTxt(c),c.conta||'',c.valor,situacao(c)[1]],'lancamentos_'+LMES+'.csv');}
+function expLanc(){const mes=lancBase();exportCSV(mes,['Vencimento','Pagamento','Descrição','Categoria','Conta','Valor','Situação'],c=>[c.vencimento,c.data_pagamento||'',c.descricao,catTxt(c),c.conta||'',c.valor,situacao(c)[1]],'lancamentos_'+LMES+'.csv');}
 function expComp(){let f=CONTAS.filter(c=>{const r=refDate(c);return r&&r.slice(0,7)===CP_MES;});if(CP_CONTA)f=f.filter(c=>c.conta===CP_CONTA);exportCSV(f,['Data','Descrição','Categoria','Conta','Valor','Comprovante','Arquivo','Valor NF'],c=>[refDate(c),c.descricao,catTxt(c),c.conta||'',c.valor,temComp(c)?'SIM':'NAO',c.arquivo_nf||'',c.valor_nf!=null?c.valor_nf:''],'comprovantes_'+CP_MES+'.csv');}
 
 // nav + eventos
@@ -719,6 +734,9 @@ $('#l_next').onclick=()=>{const o=[...$('#l_mes').options].map(x=>x.value);const
 $('#l_conta').onchange=()=>{LCONTA=$('#l_conta').value;renderLanc();};
 $('#l_busca').oninput=()=>{LBUSCA=$('#l_busca').value;renderLanc();};
 $('#l_sit').onchange=()=>{LSIT=$('#l_sit').value;renderLanc();};
+$('#l_de').onchange=()=>{LDE=$('#l_de').value;renderLanc();};
+$('#l_ate').onchange=()=>{LATE=$('#l_ate').value;renderLanc();};
+$('#l_limpar').onclick=()=>{LDE='';LATE='';$('#l_de').value='';$('#l_ate').value='';renderLanc();};
 $('#l_nova').onclick=()=>abrirDespesa();$('#l_csv').onclick=expLanc;
 $('#d_close').onclick=fecharDespesa;$('#d_voltar').onclick=fecharDespesa;$('#d_salvar').onclick=salvarDespesa;
 $('#d_dtpago').onchange=()=>{if($('#d_dtpago').value)$('#d_pago').checked=true;};
