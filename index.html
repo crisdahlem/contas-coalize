@@ -398,6 +398,9 @@ async function carregar(){
   ]);
   if(e1){$('#conn').textContent='erro';toast('Erro ao carregar: '+e1.message,true);return;}
   CONTAS=contas||[];CATS=cats||[];catById={};CATS.forEach(c=>catById[c.id]=c);
+  // juros_multa não está na view vw_contas → buscar da tabela e mesclar por id
+  const {data:_jm}=await db.from('contas').select('id,juros_multa');
+  if(_jm){const _jmap={};_jm.forEach(x=>_jmap[x.id]=Number(x.juros_multa)||0);CONTAS.forEach(c=>{c.juros_multa=_jmap[c.id]||0;});}
   $('#conn').textContent='conectado ✓';
   const co=catOptions(); $('#d_cat').innerHTML=co;
   $('#fn_cat').innerHTML='<option value="">(nenhuma)</option>'+co.replace('<option value="">(escolha a categoria)</option>','');
