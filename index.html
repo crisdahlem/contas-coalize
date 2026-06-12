@@ -27,6 +27,8 @@
   .card h3{margin:0 0 6px;font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px}
   .card .big{font-size:20px;font-weight:700}
   .card.pagar .big{color:var(--warn)} .card.pago .big{color:var(--accent)} .card.venc .big{color:var(--danger)} .card.tot .big{color:var(--blue)}
+  .card[data-sit]{transition:border-color .12s,box-shadow .12s} .card[data-sit]:hover{border-color:var(--accent)}
+  .card.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent) inset}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;margin-top:16px}
   .panel h2{font-size:15px;margin:0 0 14px}
   label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
@@ -201,11 +203,11 @@
       <button class="btn-ghost" id="l_csv">Exportar CSV</button>
     </div>
     <div class="row">
-      <div class="card venc"><h3>Vencidos</h3><div class="big" id="k_vencidos">—</div></div>
-      <div class="card"><h3>Vencem hoje</h3><div class="big" id="k_hoje">—</div></div>
-      <div class="card pagar"><h3>A vencer</h3><div class="big" id="k_avencer">—</div></div>
-      <div class="card pago"><h3>Pagos</h3><div class="big" id="k_pagos">—</div></div>
-      <div class="card tot"><h3>Total do período</h3><div class="big" id="k_total">—</div></div>
+      <div class="card venc" data-sit="vencida" onclick="filtroSit('vencida')" title="Mostrar só vencidos" style="cursor:pointer"><h3>Vencidos</h3><div class="big" id="k_vencidos">—</div></div>
+      <div class="card" data-sit="hoje" onclick="filtroSit('hoje')" title="Mostrar só os que vencem hoje" style="cursor:pointer"><h3>Vencem hoje</h3><div class="big" id="k_hoje">—</div></div>
+      <div class="card pagar" data-sit="aberto" onclick="filtroSit('aberto')" title="Mostrar só a vencer" style="cursor:pointer"><h3>A vencer</h3><div class="big" id="k_avencer">—</div></div>
+      <div class="card pago" data-sit="pago" onclick="filtroSit('pago')" title="Mostrar só pagos" style="cursor:pointer"><h3>Pagos</h3><div class="big" id="k_pagos">—</div></div>
+      <div class="card tot" data-sit="" onclick="filtroSit('')" title="Mostrar todas" style="cursor:pointer"><h3>Total do período</h3><div class="big" id="k_total">—</div></div>
     </div>
     <div class="panel">
       <h2>Contas a pagar <span class="muted" id="l_count"></span></h2>
@@ -564,10 +566,13 @@ function lancBase(){
   if(LDE||LATE)return CONTAS.filter(c=>{const d=c.data_pagamento;if(!d)return false;if(LDE&&d<LDE)return false;if(LATE&&d>LATE)return false;return(!LCONTA||c.conta===LCONTA);});
   return CONTAS.filter(c=>c.vencimento&&c.vencimento.slice(0,7)===LMES&&(!LCONTA||c.conta===LCONTA));
 }
+function filtroSit(v){LSIT=(LSIT===v&&v!=='')?'':v;const sel=$('#l_sit');if(sel)sel.value=LSIT;renderLanc();}
+window.filtroSit=filtroSit;
 function renderLanc(){
   const t=today();
   const rng=!!(LDE||LATE);
   $('#l_mes').disabled=rng;$('#l_prev').disabled=rng;$('#l_next').disabled=rng;
+  document.querySelectorAll('#view_lanc .card[data-sit]').forEach(el=>el.classList.toggle('sel',(el.getAttribute('data-sit')||'')===LSIT));
   const mes=lancBase();
   const sum=f=>f.reduce((s,c)=>s+Number(c.valor),0);
   $('#k_vencidos').textContent=fmt(sum(mes.filter(c=>c.status==='a_pagar'&&c.vencimento<t)));
