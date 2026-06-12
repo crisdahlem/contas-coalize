@@ -338,7 +338,8 @@
           </select>
         </div>
         <div class="field"><label>&nbsp;</label><div class="ckline" style="margin-top:0"><input type="checkbox" id="d_pago"><label style="margin:0">Já pago</label></div></div>
-        <div class="field"></div><div class="field"></div>
+        <div class="field"><label>Juros/Multa (R$)</label><input type="number" step="0.01" min="0" id="d_juros" placeholder="0,00"><small class="muted">vai pra 5.2 Juros no mês do pagamento</small></div>
+        <div class="field"></div>
       </div>
       <div class="field" style="margin-top:8px"><label>Observações</label><textarea id="d_obs" rows="2" placeholder="Opcional"></textarea></div>
       <div class="field" style="margin-top:8px"><label>Anexo (boleto/NF)</label><input type="file" id="d_anexo" accept="application/pdf,image/*"></div>
@@ -525,7 +526,8 @@ window.abrirForn=abrirForn;window.excluirForn=excluirForn;
 
 function renderFluxo(){
   const mat={};CATS.forEach(c=>mat[c.id]=new Array(12).fill(0));
-  CONTAS.forEach(c=>{if(BASE==='pago'&&c.status!=='pago')return;if(BASE==='apagar'&&c.status!=='a_pagar')return;const r=refDate(c);if(!r||+r.slice(0,4)!==ANO)return;const m=+r.slice(5,7)-1;if(mat[c.categoria_id])mat[c.categoria_id][m]+=Number(c.valor);});
+  const jurosId=(CATS.find(x=>x.codigo==='5.2')||{}).id;
+  CONTAS.forEach(c=>{if(BASE==='pago'&&c.status!=='pago')return;if(BASE==='apagar'&&c.status!=='a_pagar')return;const r=refDate(c);if(!r||+r.slice(0,4)!==ANO)return;const m=+r.slice(5,7)-1;if(mat[c.categoria_id])mat[c.categoria_id][m]+=Number(c.valor);if(jurosId&&Number(c.juros_multa))mat[jurosId][m]+=Number(c.juros_multa);});
   const cols=MES===''?[...Array(12).keys()]:[+MES];const showTot=cols.length>1;const sc=a=>cols.reduce((s,i)=>s+a[i],0);
   const grand=new Array(12).fill(0);
   let groupsHtml='',g=null,gtot=null,grp='';
@@ -569,7 +571,7 @@ function renderLanc(){
     const acao=c.status==='a_pagar'?`<button class="btn-pay btn-sm" onclick="pagar('${c.id}')">Dar baixa</button>`:`<button class="btn-ghost btn-sm" onclick="desfazer('${c.id}')">Reabrir</button>`;
     return `<tr><td>${br(c.vencimento)}</td><td>${br(c.data_pagamento)}</td>
       <td class="resumo">${esc(c.descricao)}${rec}<br><span class="chip">${esc(catTxt(c))}</span> <small>${esc(c.fornecedor||'')}</small></td>
-      <td>${esc(c.conta||'—')}</td><td class="right">${fmt(c.valor)}</td><td><span class="tag ${cls}">${lbl}</span></td>
+      <td>${esc(c.conta||'—')}</td><td class="right">${fmt(c.valor)}${Number(c.juros_multa)?`<br><small class="muted">+ ${fmt(c.juros_multa)} juros</small>`:''}</td><td><span class="tag ${cls}">${lbl}</span></td>
       <td>${anexo}</td><td class="right"><button class="btn-ghost btn-sm" onclick="abrirDespesa('${c.id}')">Editar</button> ${acao} <button class="btn-del btn-sm" onclick="excluir('${c.id}')">✕</button></td></tr>`;
   }).join('');
 }
@@ -602,10 +604,12 @@ function abrirDespesa(id){
     $('#d_cc').value=c.centro_custo||'';$('#d_ref').value=c.codigo_referencia||'';$('#d_parc').value='1';
     $('#d_venc').value=c.vencimento||today();$('#d_forma').value=c.forma_pagamento||'';$('#d_conta').value=c.conta||'';
     $('#d_rec').value=c.recorrencia||'nenhuma';$('#d_pago').checked=c.status==='pago';$('#d_obs').value=c.observacao||'';
+    $('#d_juros').value=c.juros_multa||'';
   }else{
     $('#d_forn').value='';$('#d_comp').value=today();$('#d_desc').value='';$('#d_valor').value='';
     $('#d_cat').value='';$('#d_cc').value='';$('#d_ref').value='';$('#d_parc').value='1';$('#d_venc').value=today();
     $('#d_forma').value='';$('#d_conta').value='';$('#d_rec').value='nenhuma';$('#d_pago').checked=false;$('#d_obs').value='';
+    $('#d_juros').value='';
   }
   $('#d_anexo').value='';$('#d_status').textContent='';
   $('#despesa_modal').style.display='flex';
@@ -626,10 +630,11 @@ async function salvarDespesa(){
     const comp=$('#d_comp').value||venc,forma=$('#d_forma').value||null,conta=$('#d_conta').value||null;
     const ref=$('#d_ref').value.trim()||null,cc=$('#d_cc').value.trim()||null,obs=$('#d_obs').value.trim()||null;
     const pagoChk=$('#d_pago').checked;
+    const juros=parseFloat($('#d_juros').value)||0;
     if(DEDIT){
       const atual=CONTAS.find(x=>x.id===DEDIT)||{};
       const payload={descricao:desc,fornecedor_id:forn_id,categoria_id:cat,valor,vencimento:venc,data_competencia:comp,
-        recorrencia:$('#d_rec').value,forma_pagamento:forma,conta:conta,codigo_referencia:ref,centro_custo:cc,observacao:obs,
+        recorrencia:$('#d_rec').value,forma_pagamento:forma,conta:conta,codigo_referencia:ref,centro_custo:cc,observacao:obs,juros_multa:juros,
         status:pagoChk?'pago':'a_pagar',data_pagamento:pagoChk?(atual.data_pagamento||today()):null};
       if(anexo_path)payload.anexo_path=anexo_path;
       const{error}=await db.from('contas').update(payload).eq('id',DEDIT);if(error)throw error;
@@ -641,7 +646,7 @@ async function salvarDespesa(){
       for(let i=0;i<N;i++){const vp=N>1?Math.round(valor/N*100)/100:valor;
         rows.push({descricao:N>1?`${desc} (${i+1}/${N})`:desc,fornecedor_id:forn_id,categoria_id:cat,valor:vp,
           vencimento:addMonths(venc,i),data_competencia:comp,data_pagamento:pago?venc:null,status:pago?'pago':'a_pagar',
-          recorrencia:rec,forma_pagamento:forma,conta:conta,codigo_referencia:ref,centro_custo:cc,observacao:obs,
+          recorrencia:rec,forma_pagamento:forma,conta:conta,codigo_referencia:ref,centro_custo:cc,observacao:obs,juros_multa:i===0?juros:0,
           anexo_path:i===0?anexo_path:null,origem:'manual'});}
       const{error}=await db.from('contas').insert(rows);if(error)throw error;
       toast(N>1?`Despesa lançada em ${N}×.`:'Despesa lançada ✓');
