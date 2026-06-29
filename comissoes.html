@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coalize · Sistema de Comissões</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#f4f6f8;--panel:#fff;--panel2:#f7f9fb;--line:#e4e8ed;--ink:#1c2430;--muted:#6b7682;
+    --green:#1e9e57;--green-d:#16934e;--gsoft:#e7f6ec;--gtext:#15834a;
+    --amber:#b7791f;--asoft:#fbf1da;--red:#d64457;--rsoft:#fdeaed;--rtext:#c23a4c;--chip:#eef1f4;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;font-size:15px;-webkit-font-smoothing:antialiased}
+  .loginwrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+  .loginbox{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:30px;width:100%;max-width:380px;box-shadow:0 10px 40px rgba(20,40,60,.08)}
+  .loginbox .logo{font-weight:800;font-size:20px;display:flex;align-items:center;gap:10px;margin-bottom:4px}
+  .loginbox .logo .dot{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,#1e9e57,#37c47e)}
+  .loginbox .sub{color:var(--muted);font-size:13px;margin:0 0 22px}
+  .loginbox label{display:block;font-size:12.5px;color:var(--muted);margin:14px 0 5px;font-weight:600}
+  .loginbox input{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:10px;font-size:14px;background:var(--panel2)}
+  .loginbox input:focus{outline:none;border-color:var(--green)}
+  .loginbox button{width:100%;margin-top:20px;background:var(--green);color:#fff;border:0;padding:12px;border-radius:10px;font-weight:700;font-size:15px;cursor:pointer}
+  .loginbox button:disabled{opacity:.6;cursor:default}
+  .err{color:var(--rtext);font-size:13px;margin-top:12px;min-height:16px}
+  .app{max-width:1120px;margin:0 auto;padding:0 18px 64px}
+  header.top{display:flex;align-items:center;gap:12px;padding:18px 2px 8px;flex-wrap:wrap}
+  .logo{font-weight:800;font-size:18px;display:flex;align-items:center;gap:9px}
+  .logo .dot{width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,#1e9e57,#37c47e)}
+  .spacer{flex:1}
+  .userchip{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted)}
+  .userchip b{color:var(--ink)}
+  .rolebadge{background:var(--gsoft);color:var(--gtext);padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:700;text-transform:capitalize}
+  .logout{background:var(--chip);border:1px solid var(--line);color:#3b4350;padding:6px 12px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer}
+  .tabs{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 22px}
+  .tab{background:var(--chip);color:#3b4350;border:1px solid var(--line);padding:9px 18px;border-radius:9px;font-weight:600;font-size:14px;cursor:pointer}
+  .tab:hover{background:#e6eaee}
+  .tab.active{background:var(--green);color:#fff;border-color:var(--green-d);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+  h2.sec{font-size:19px;margin:0 0 4px}
+  .lead{color:var(--muted);font-size:14px;margin:0 0 16px}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+  @media(max-width:820px){.kpis{grid-template-columns:repeat(2,1fr)}}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:15px 16px}
+  .kpi .lab{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+  .kpi .val{font-size:25px;font-weight:800;margin-top:6px}
+  .kpi .sub{font-size:12px;color:var(--muted);margin-top:3px}
+  .kpi.green .val{color:var(--green)} .kpi.red .val{color:var(--red)}
+  .grid2{display:grid;grid-template-columns:1.05fr 1fr;gap:12px;margin-bottom:16px}
+  @media(max-width:820px){.grid2{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+  .card h3{margin:0 0 14px;font-size:12.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+  .donutwrap{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+  .legend{display:flex;flex-direction:column;gap:8px;font-size:13.5px;min-width:170px}
+  .legend .li{display:flex;align-items:center;gap:9px}.legend .sw{width:11px;height:11px;border-radius:3px}.legend b{margin-left:auto}
+  .bars{display:flex;flex-direction:column;gap:11px}
+  .brow{display:grid;grid-template-columns:92px 1fr 100px;align-items:center;gap:10px;font-size:13px}
+  .brow .nm{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .track{height:18px;background:#eef1f4;border-radius:6px;overflow:hidden;display:flex}.seg{height:100%}
+  .brow .rs{text-align:right;color:var(--muted)}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  .tablewrap{overflow:auto;max-height:560px}
+  th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);position:sticky;top:0;background:var(--panel)}
+  tr:hover td{background:var(--panel2)}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:700}
+  .s-PAGO{background:var(--gsoft);color:var(--gtext)}.s-PARCIAL{background:var(--asoft);color:var(--amber)}
+  .s-INADIMPLENTE{background:var(--rsoft);color:var(--rtext)}.s-SEM{background:#eef1f4;color:var(--muted)}
+  .toolbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+  input.search,select{background:var(--panel);border:1px solid var(--line);color:var(--ink);padding:8px 11px;border-radius:9px;font-size:13.5px;outline:none}
+  input.search{flex:1;min-width:200px}.count{font-size:12.5px;color:var(--muted)}
+  .muted{color:var(--muted)}.small{font-size:12.5px}
+  .banner{background:#eef6f0;border:1px solid #d6e9dd;border-left:3px solid var(--green);border-radius:0 12px 12px 0;padding:13px 15px;margin-bottom:16px;font-size:13.5px}
+  .banner.warn{background:var(--asoft);border-color:#ecd9a8;border-left-color:var(--amber)}
+  .empty{background:var(--panel);border:1px dashed #d3d9e0;border-radius:14px;padding:26px;color:var(--muted)}
+  .empty .big{font-size:15px;font-weight:700;color:var(--ink);margin-bottom:6px}
+  .form2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:680px){.form2{grid-template-columns:1fr}}
+  .form2 label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--muted)}
+  .form2 .full{grid-column:1/-1}
+  .form2 input,.form2 select{padding:8px 11px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;background:var(--panel2);color:var(--ink)}
+  .btnp{background:var(--green);color:#fff;border:0;padding:9px 18px;border-radius:9px;font-weight:700;cursor:pointer;font-size:13.5px}
+  .btng{background:var(--chip);color:#3b4350;border:1px solid var(--line);padding:9px 14px;border-radius:9px;cursor:pointer;font-size:13.5px}
+  .lk{background:none;border:0;color:var(--green-d);cursor:pointer;font-size:13px;padding:0;text-decoration:underline}
+  .tfit{table-layout:fixed;width:100%}
+  .tfit th,.tfit td{white-space:normal;word-break:break-word}
+  .ccopt{padding:7px 11px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--line)}
+  .ccopt:hover{background:var(--panel2)}
+  .foot{color:var(--muted);font-size:12px;margin-top:20px;line-height:1.5}
+</style>
+</head>
+<body>
+
+<div id="login" class="loginwrap">
+  <div class="loginbox">
+    <div class="logo"><span class="dot"></span> Coalize · Comissões</div>
+    <p class="sub">Entre com seu e-mail e senha.</p>
+    <label>E-mail</label>
+    <input id="email" type="email" placeholder="voce@coalize.com.br" autocomplete="username">
+    <label>Senha</label>
+    <input id="senha" type="password" placeholder="********" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+    <button id="btnLogin" onclick="doLogin()">Entrar</button>
+    <div class="err" id="loginErr"></div>
+  </div>
+</div>
+
+<div id="appmain" class="app" style="display:none">
+  <header class="top">
+    <div class="logo"><span class="dot"></span> Coalize · Comissões</div>
+    <div class="spacer"></div>
+    <div class="userchip"><span id="uName"></span><span class="rolebadge" id="uRole"></span>
+      <button class="logout" onclick="doLogout()">Sair</button></div>
+  </header>
+  <div class="tabs" id="tabs"></div>
+  <div id="view"></div>
+  <div class="foot" id="foot"></div>
+</div>
+
+<script>
+const SUPA_URL="https://wvqwcxvcihiqaymdqcbl.supabase.co";
+const SUPA_KEY="sb_publishable_dFS29feNQ0CeuFL6n7qSSw_vwf8dMrx";
+const SB = supabase.createClient(SUPA_URL, SUPA_KEY);
+const CONTAS_DB = supabase.createClient("https://qvceorcngqsygasiivbn.supabase.co","sb_publishable_EXiaEiULuThk97lPa76F6A_7VntzxxW");
+
+const TABS=['Vendas','Comissão vendedores','Contadores','Comissão contadores','Pagamentos'];
+const ALLOWED={
+  admin:TABS,
+  farmer:['Contadores','Comissão contadores','Pagamentos'],
+  financeiro:TABS,
+  vendedor:['Vendas'],
+};
+let ME={email:null,nome:null,role:null};
+let ROWS=[];
+let CONTADORES=[], edC=null;
+let selContador='todos', selPeriodo='todos', selCloser='', selCarteira='';
+let tab=null, pct=20;
+const fmt=v=>'R$ '+(Number(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const $=id=>document.getElementById(id);
+
+async function init(){
+  const {data:{session}}=await SB.auth.getSession();
+  if(session){ await afterLogin(); } else { showLogin(); }
+}
+function showLogin(){ $('login').style.display='flex'; $('appmain').style.display='none'; }
+
+async function doLogin(){
+  const email=$('email').value.trim(), senha=$('senha').value;
+  const btn=$('btnLogin'); $('loginErr').textContent=''; btn.disabled=true; btn.textContent='Entrando...';
+  const {error}=await SB.auth.signInWithPassword({email,password:senha});
+  btn.disabled=false; btn.textContent='Entrar';
+  if(error){ $('loginErr').textContent = traduzErro(error.message); return; }
+  await afterLogin();
+}
+function traduzErro(m){
+  if(/Invalid login/i.test(m)) return 'E-mail ou senha incorretos.';
+  if(/Email not confirmed/i.test(m)) return 'E-mail ainda nao confirmado (peca ao admin).';
+  return m;
+}
+async function doLogout(){ await SB.auth.signOut(); ME={email:null,nome:null,role:null}; showLogin(); }
+
+async function afterLogin(){
+  const {data:{user}}=await SB.auth.getUser();
+  ME.email=user.email;
+  const {data:prof}=await SB.from('profiles').select('role,nome').eq('id',user.id).maybeSingle();
+  ME.role=(prof&&prof.role)||'vendedor';
+  ME.nome=(prof&&prof.nome)||user.email;
+  const {data:rows}=await SB.from('conferencia_comissao').select('*');
+  ROWS=rows||[];
+  $('login').style.display='none'; $('appmain').style.display='block';
+  $('uName').innerHTML='<b>'+ME.nome+'</b>'; $('uRole').textContent=ME.role;
+  tab=ALLOWED[ME.role][0];
+  render();
+}
+
+function agg(){
+  const k={n:ROWS.length,pago:0,parcial:0,inad:0,sem:0,totPago:0};
+  const cl={};
+  ROWS.forEach(r=>{
+    const s=r.status||''; if(s==='PAGO')k.pago++; else if(s.startsWith('PARCIAL'))k.parcial++; else if(s==='INADIMPLENTE')k.inad++; else k.sem++;
+    k.totPago+=Number(r.valor_pago)||0;
+    const n=(r.closer||'—').trim(); if(!cl[n])cl[n]={closer:n,total:0,pago:0,parcial:0,inad:0,pagoRS:0};
+    const o=cl[n];o.total++; if(s==='PAGO')o.pago++; else if(s.startsWith('PARCIAL'))o.parcial++; else if(s==='INADIMPLENTE')o.inad++; o.pagoRS+=Number(r.valor_pago)||0;
+  });
+  k.closers=Object.values(cl).sort((a,b)=>b.total-a.total);
+  return k;
+}
+function pill(s){s=s||'';const k=s.startsWith('PARCIAL')?'PARCIAL':(!s||s.startsWith('SEM'))?'SEM':s;return `<span class="pill s-${k}">${(!s||s.startsWith('SEM'))?'SEM COBR.':s}</span>`}
+
+function elTabs(){
+  const allow=ALLOWED[ME.role]||['Vendas'];
+  if(!allow.includes(tab))tab=allow[0];
+  $('tabs').innerHTML=allow.map(t=>`<button class="tab ${t===tab?'active':''}" onclick="setTab('${t}')">${t}</button>`).join('');
+}
+function setTab(t){tab=t;render()}
+
+function donut(k){
+  const segs=[['PAGO',k.pago,'#1e9e57'],['PARCIAL',k.parcial,'#e0a32a'],['INADIMPLENTE',k.inad,'#d64457'],['SEM COBR.',k.sem,'#aab3bd']];
+  const tot=segs.reduce((a,s)=>a+s[1],0)||1,R=70,C=2*Math.PI*R;let off=0;
+  const cir=segs.map(s=>{const len=C*s[1]/tot;const c=`<circle r="${R}" cx="90" cy="90" fill="none" stroke="${s[2]}" stroke-width="22" stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-off}" transform="rotate(-90 90 90)"/>`;off+=len;return c}).join('');
+  const leg=segs.map(s=>`<div class="li"><span class="sw" style="background:${s[2]}"></span>${s[0]} <b>${s[1]}</b></div>`).join('');
+  return `<div class="card"><h3>Status de pagamento · ${tot} clientes</h3><div class="donutwrap">
+    <svg width="180" height="180" viewBox="0 0 180 180">${cir}<text x="90" y="84" text-anchor="middle" fill="#1c2430" font-size="30" font-weight="800">${Math.round(k.pago/tot*100)}%</text><text x="90" y="106" text-anchor="middle" fill="#6b7682" font-size="12">em dia</text></svg>
+    <div class="legend">${leg}</div></div></div>`;
+}
+function closerBars(k){
+  const max=Math.max(1,...k.closers.map(c=>c.total)),w=v=>(v/max*100).toFixed(1)+'%';
+  const rows=k.closers.map(c=>`<div class="brow"><span class="nm">${c.closer}</span>
+    <div class="track"><div class="seg" style="width:${w(c.pago)};background:#1e9e57"></div><div class="seg" style="width:${w(c.parcial)};background:#e0a32a"></div><div class="seg" style="width:${w(c.inad)};background:#d64457"></div></div>
+    <span class="rs">${fmt(c.pagoRS)}</span></div>`).join('');
+  return `<div class="card"><h3>Por closer</h3><div class="bars">${rows||'<span class="muted small">sem dados</span>'}</div></div>`;
+}
+const DRAW={};
+function tableUI(id,cols){
+  return `<div class="toolbar"><input class="search" id="${id}_q" placeholder="Buscar cliente..." oninput="DRAW['${id}']()">
+    <select id="${id}_st" onchange="DRAW['${id}']()"><option value="">Todos status</option><option>PAGO</option><option>PARCIAL</option><option>INADIMPLENTE</option></select>
+    <span class="count" id="${id}_c"></span></div>
+    <div class="card" style="padding:0"><div class="tablewrap"><table><thead><tr>${cols}</tr></thead><tbody id="${id}_b"></tbody></table></div></div>`;
+}
+function mkDraw(id,rowFn,nc){DRAW[id]=function(){
+  const q=($(id+'_q').value||'').toLowerCase(),st=$(id+'_st').value;
+  let rows=ROWS.filter(r=>(!q||(r.cliente||'').toLowerCase().includes(q))&&(!st||(r.status||'').startsWith(st)));
+  $(id+'_c').textContent=rows.length+' de '+ROWS.length;
+  $(id+'_b').innerHTML=rows.slice(0,400).map(rowFn).join('')+(rows.length>400?`<tr><td colspan="${nc}" class="muted small">+ ${rows.length-400} (refine a busca)</td></tr>`:'');
+};}
+function semDados(msg){return `<div class="empty"><div class="big">Sem dados ainda</div>${msg||'Importe a conferencia no Supabase para popular esta tela.'}</div>`}
+
+function aggContadores(){
+  const map={};
+  ROWS.forEach(r=>{ if(!r.contador_id)return; const c=contById(r.contador_id); if(!c)return; const id=String(c.id);
+    if(!map[id])map[id]={id:c.id,nome:c.nome,pct:c.percentual,status:c.comissao_status||'aguardando pagamento',clientes:0,base:0};
+    map[id].clientes++; map[id].base+=Number(r.valor_pago)||0; });
+  return Object.values(map).map(x=>{ x.comissao = x.pct? x.base*x.pct/100 : 0; return x; }).sort((a,b)=>b.comissao-a.comissao);
+}
+function viewPagamentos(){
+  if(!ROWS.length) return `<h2 class="sec">Pagamentos</h2>`+semDados();
+  setTimeout(async()=>{ if(!CONTADORES.length){ const {data}=await SB.from('contadores').select('*'); CONTADORES=data||[]; } pgRender(); },0);
+  return `<h2 class="sec">Pagamentos</h2><p class="lead">Comissões a pagar e já enviadas — busque e consulte por contador.</p>
+  <div id="pg_kpis"></div>
+  <div class="toolbar">
+    <input class="search" id="pg_q" placeholder="Buscar contador..." oninput="pgRender()">
+    <select id="pg_st" onchange="pgRender()"><option value="">Todos (enviados)</option><option>enviado para pagamento</option><option>pago</option></select>
+    <span class="count" id="pg_c"></span>
+  </div>
+  <div id="pg_list"><div class="muted small">Carregando...</div></div>`;
+}
+function pgRender(){
+  if(!document.getElementById('pg_list'))return;
+  const ag=aggContadores().filter(x=>x.status==='enviado para pagamento'||x.status==='pago');
+  const totEnv=ag.filter(x=>x.status==='enviado para pagamento').reduce((s,x)=>s+x.comissao,0);
+  const totPago=ag.filter(x=>x.status==='pago').reduce((s,x)=>s+x.comissao,0);
+  const nEnv=ag.filter(x=>x.status==='enviado para pagamento').length, nPago=ag.filter(x=>x.status==='pago').length;
+  const kp=document.getElementById('pg_kpis');
+  if(kp) kp.innerHTML=`<div class="kpis">
+    <div class="kpi red"><div class="lab">A pagar (enviados)</div><div class="val">${fmt(totEnv)}</div><div class="sub">${nEnv} contadores</div></div>
+    <div class="kpi green"><div class="lab">Pagos</div><div class="val">${fmt(totPago)}</div><div class="sub">${nPago} contadores</div></div>
+    <div class="kpi"><div class="lab">Na fila</div><div class="val">${ag.length}</div></div></div>`;
+  if(!ag.length){ document.getElementById('pg_list').innerHTML='<div class="empty"><div class="big">Nada enviado para pagamento ainda</div>Use o botão "Enviar para pagamento" na aba Comissão contadores — só o que foi conferido e está OK aparece aqui.</div>'; const cc0=document.getElementById('pg_c'); if(cc0)cc0.textContent=''; return; }
+  const q=(val('pg_q')||'').toLowerCase(); const st=val('pg_st');
+  let list=ag.filter(x=>(!q||(x.nome||'').toLowerCase().includes(q))&&(!st||x.status===st));
+  const cc=document.getElementById('pg_c'); if(cc)cc.textContent=list.length+' contadores';
+  const body=list.slice(0,300).map(x=>`<tr><td>${x.nome}</td><td class="num">${x.clientes}</td><td class="num">${x.pct?x.pct+'%':'—'}</td><td class="num">${fmt(x.comissao)}</td><td>${statusPill(x.status)}</td></tr>`).join('');
+  document.getElementById('pg_list').innerHTML=`<div class="card" style="padding:0"><div class="tablewrap"><table><thead><tr><th>Contador</th><th class="num">Clientes</th><th class="num">%</th><th class="num">Comissão</th><th>Status</th></tr></thead><tbody>${body}</tbody></table></div></div>`+(list.length>300?`<div class="muted small" style="margin-top:8px">+ ${list.length-300} (refine a busca)</div>`:'');
+}
+function viewVendas(){
+  if(ME.role==='vendedor') return `<h2 class="sec">Vendas</h2><div class="banner">Voce ve apenas as suas vendas. Comissoes, pagamentos e o sistema financeiro nao aparecem no seu acesso.</div>`+semDados('Suas vendas aparecerao aqui (cadastro entra na proxima fase).');
+  if(!ROWS.length) return `<h2 class="sec">Vendas</h2>`+semDados();
+  const h=`<h2 class="sec">Vendas</h2><p class="lead">Base de clientes vendidos com indicacao de contador.</p>
+  ${tableUI('vd','<th>Cliente</th><th>Closer</th><th class="num">Usuarios</th><th>Hardware</th><th>Status pgto</th>')}`;
+  setTimeout(()=>{mkDraw('vd',r=>`<tr><td>${r.cliente}</td><td>${r.closer||''}</td><td class="num">${r.usuarios||''}</td><td>${r.hardware||'—'}</td><td>${pill(r.status)}</td></tr>`,5);DRAW['vd']();},0);
+  return h;
+}
+function viewComissaoContadores(){
+  if(!ROWS.length) return `<h2 class="sec">Comissao contadores</h2>`+semDados();
+  setTimeout(ccLoad,0);
+  return `<h2 class="sec">Comissao contadores</h2><p class="lead">Selecione um contador para ver os clientes que ele indicou e o total da comissao.</p>
+  <div class="toolbar">
+    <label class="small muted">Contador:</label>
+    <div style="position:relative;min-width:280px">
+      <input class="search" id="cc_cont_in" placeholder="Todos — digite para buscar" oninput="ccContType(this.value)" onblur="setTimeout(function(){var b=document.getElementById('cc_cont_results');if(b)b.style.display='none'},200)" autocomplete="off" style="width:100%">
+      <div id="cc_cont_results" style="display:none;position:absolute;z-index:30;left:0;right:0;top:38px;background:var(--panel);border:1px solid var(--line);border-radius:9px;max-height:260px;overflow:auto;box-shadow:0 6px 20px rgba(20,40,60,.12)"></div>
+    </div>
+    <label class="small muted">Periodo:</label>
+    <select id="cc_per" onchange="selPeriodo=this.value;ccRender()"><option value="todos">Todos</option></select>
+    <label class="small muted">Closer:</label>
+    <select id="cc_closer" onchange="selCloser=this.value;ccRender()"><option value="">Todos</option></select>
+    <label class="small muted">Carteira:</label>
+    <select id="cc_cart" onchange="selCarteira=this.value;ccRender()"><option value="">Todas</option><option>Barbara</option><option>Mirian</option><option>Juliana</option><option value="__sem">Sem carteira</option></select>
+    <input class="search" id="cc_q" placeholder="Buscar por cliente, ID, CNPJ, contador ou closer..." oninput="ccSearch()">
+    <button class="btng" onclick="ccLimpar()">Limpar</button>
+  </div>
+  <div id="cc_sum"></div>
+  <div id="cc_list"><div class="muted small">Carregando...</div></div>`;
+}
+async function ccLoad(){
+  if(!CONTADORES.length){ const {data}=await SB.from('contadores').select('*').order('nome'); CONTADORES=data||[]; }
+  const ci=document.getElementById('cc_cont_in');
+  if(ci){ const cur=contById(selContador); ci.value = selContador==='todos'?'' : (selContador==='sem'?'— Sem contador —' : (cur?cur.nome:'')); }
+  const pers=[...new Set(ROWS.map(r=>r.periodo).filter(Boolean))];
+  const ps=document.getElementById('cc_per');
+  if(ps){ ps.innerHTML='<option value="todos">Todos</option>'+pers.map(p=>`<option value="${p}">${p}</option>`).join(''); ps.value=selPeriodo; }
+  const closers=[...new Set(ROWS.map(r=>r.closer).filter(Boolean))].sort();
+  const clo=document.getElementById('cc_closer'); if(clo){ clo.innerHTML='<option value="">Todos</option>'+closers.map(x=>`<option>${x}</option>`).join(''); clo.value=selCloser; }
+  const cart=document.getElementById('cc_cart'); if(cart){ cart.value=selCarteira; }
+  ccRender();
+}
+function contById(id){return CONTADORES.find(c=>String(c.id)===String(id))}
+function ccContType(v){
+  v=(v||'').trim(); const box=document.getElementById('cc_cont_results');
+  if(v===''){ selContador='todos'; if(box)box.style.display='none'; ccRender(); return; }
+  const ql=v.toLowerCase();
+  const matches=CONTADORES.filter(c=>(c.nome||'').toLowerCase().includes(ql)).slice(0,15);
+  let html='<div class="ccopt" onmousedown="pickContador(\'todos\')">Todos</div><div class="ccopt" onmousedown="pickContador(\'sem\')">— Sem contador —</div>';
+  html+=matches.map(c=>`<div class="ccopt" onmousedown="pickContador('${c.id}')">${(c.nome||'')}${c.percentual?(' <span class="muted small">('+c.percentual+'%)</span>'):''}</div>`).join('');
+  if(!matches.length) html+='<div class="ccopt muted">nenhum contador encontrado</div>';
+  if(box){ box.innerHTML=html; box.style.display='block'; }
+}
+function pickContador(id){
+  const box=document.getElementById('cc_cont_results'); if(box)box.style.display='none';
+  if(id==='todos'){ selContador='todos'; set('cc_cont_in',''); }
+  else if(id==='sem'){ selContador='sem'; set('cc_cont_in','— Sem contador —'); }
+  else { selContador=String(id); const c=contById(id); set('cc_cont_in', c?c.nome:''); }
+  ccRender();
+}
+function ccRender(){
+  const q=(val('cc_q')||'').toLowerCase();
+  let rows=ROWS.filter(r=>{
+    if(selPeriodo!=='todos' && r.periodo!==selPeriodo) return false;
+    if(selContador==='sem' && r.contador_id) return false;
+    if(selContador!=='todos' && selContador!=='sem' && String(r.contador_id)!==String(selContador)) return false;
+    if(selCloser && (r.closer||'')!==selCloser) return false;
+    if(selCarteira){ const cc2=contById(r.contador_id); const cart=cc2?(cc2.carteira||''):''; if(selCarteira==='__sem'){ if(cart) return false; } else if(cart!==selCarteira) return false; }
+    if(q){
+      const cn=contById(r.contador_id);
+      const nome=(r.cliente||'').toLowerCase();
+      const idop=String(r.id_op||'');
+      const cnNome=(cn?cn.nome:'').toLowerCase();
+      let ok = nome.includes(q) || idop.includes(q) || cnNome.includes(q) || (r.closer||'').toLowerCase().includes(q);
+      if(!ok && q.replace(/\D/g,'').length>=6){ ok = String(r.cnpj||'').replace(/\D/g,'').includes(q.replace(/\D/g,'')); }
+      if(!ok) return false;
+    }
+    return true;
+  });
+  let totBase=0, totCom=0;
+  rows.forEach(r=>{ totBase+=Number(r.valor_pago)||0; const c=contById(r.contador_id); if(c&&c.percentual) totCom+=(Number(r.valor_pago)||0)*c.percentual/100; });
+  const sum=document.getElementById('cc_sum');
+  if(selContador!=='todos' && selContador!=='sem'){
+    const c=contById(selContador);
+    const cs=(c&&c.comissao_status)||'aguardando pagamento';
+    sum.innerHTML=`<div class="kpis"><div class="kpi"><div class="lab">Contador</div><div class="val" style="font-size:17px">${c?c.nome:''}</div><div class="sub">${c&&c.percentual?c.percentual+'% de comissao':'% nao definido'}</div></div>
+      <div class="kpi"><div class="lab">Clientes</div><div class="val">${rows.length}</div></div>
+      <div class="kpi green"><div class="lab">Base paga</div><div class="val">${fmt(totBase)}</div></div>
+      <div class="kpi ${cs==='pago'?'green':'red'}"><div class="lab">${cs==='pago'?'Comissão paga':'Comissão a pagar'}</div><div class="val">${fmt(totCom)}</div></div></div>
+      <div class="toolbar" style="margin:0 0 14px;align-items:center">
+        <span class="small muted">Status da comissão:</span> ${statusPill(cs)}
+        <select onchange="setComissaoStatus(${c?c.id:0},this.value)">${STATUS_OPTS.map(o=>`<option ${o===cs?'selected':''}>${o}</option>`).join('')}</select>
+        <button class="btnp" onclick="enviarPagamento(${c?c.id:0})">Enviar para pagamento</button>
+      </div>`;
+  } else {
+    sum.innerHTML=`<div class="toolbar"><span class="count">${rows.length} clientes · base ${fmt(totBase)} · comissao calculada ${fmt(totCom)} (apenas dos vinculados)</span></div>`;
+  }
+  const esc2=s=>(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+  const MES=['jan','fev','mar','abr','mai','jun'];
+  const fc=v=>(Number(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const mcell=o=>{ if(!o||o.v==null)return '<span class="muted">—</span>'; const col=o.p?'var(--green-d)':'var(--red)'; return `<span style="color:${col}">${fc(o.v)}</span>`; };
+  const rowdl='<datalist id="rowdl">'+CONTADORES.map(c=>`<option value="${esc2(c.nome)}"></option>`).join('')+'</datalist>';
+  const body=rows.slice(0,300).map(r=>{ const c=contById(r.contador_id); const com=(c&&c.percentual)?(Number(r.valor_pago)||0)*c.percentual/100:null; const m=r.meses||{}; const cn=c?c.nome:'';
+    return `<tr><td class="num">${r.id_op||''}</td><td>${r.cliente}</td><td>${r.closer||''}</td>`+MES.map(k=>`<td class="num">${mcell(m[k])}</td>`).join('')+
+    `<td><input list="rowdl" value="${esc2(cn)}" placeholder="— vincular —" onchange="atribuirContadorByName(${r.id},this.value)" style="max-width:180px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--ink);font-size:12.5px"></td>
+    <td class="num">${com!=null?fmt(com):'<span class="muted">—</span>'}</td></tr>`}).join('');
+  document.getElementById('cc_list').innerHTML=rowdl+`<div class="card" style="padding:0"><div class="tablewrap"><table><thead><tr><th class="num">ID</th><th>Cliente</th><th>Closer</th><th class="num">jan</th><th class="num">fev</th><th class="num">mar</th><th class="num">abr</th><th class="num">mai</th><th class="num">jun</th><th>Contador</th><th class="num">Comissao</th></tr></thead><tbody>${body}</tbody></table></div></div>`+(rows.length>300?`<div class="muted small" style="margin-top:8px">+ ${rows.length-300} (refine a busca ou filtre por contador)</div>`:'')+`<div class="muted small" style="margin-top:8px"><span style="color:var(--green-d)">verde = pago</span> · <span style="color:var(--red)">vermelho = em aberto</span></div>`;
+}
+const STATUS_OPTS=['aguardando pagamento','enviado para pagamento','pago','não responde','arrumar dados','inadimplente','conferir dados bancários','Aguardando NF','Aguardando confirmar dados','Não emite NF'];
+const STATUS_COLORS={
+ 'aguardando pagamento':['#fdf3cf','#7a5c00'],
+ 'enviado para pagamento':['#cfe2f3','#0c447c'],
+ 'pago':['#1e9e57','#ffffff'],
+ 'não responde':['#3f3f3f','#ffffff'],
+ 'arrumar dados':['#f9d6d3','#b42318'],
+ 'inadimplente':['#e35248','#ffffff'],
+ 'conferir dados bancários':['#e6ddf7','#5b3a9e'],
+ 'Aguardando NF':['#fff200','#5b5b00'],
+ 'Aguardando confirmar dados':['#dadada','#444444'],
+ 'Não emite NF':['#a8302f','#ffffff']
+};
+function statusPill(s){ const c=STATUS_COLORS[s]||['#eef1f4','#444444']; return `<span style="background:${c[0]};color:${c[1]};padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:700">${s}</span>`; }
+async function setComissaoStatus(id,status){ if(!id)return; const {error}=await SB.from('contadores').update({comissao_status:status}).eq('id',id); if(error){alert('Erro ao salvar status: '+error.message);return;} const c=CONTADORES.find(x=>String(x.id)===String(id)); if(c)c.comissao_status=status; ccRender(); }
+async function enviarPagamento(id){
+  const c=contById(id); if(!c){return;}
+  if(!c.percentual){ alert('Defina o % deste contador antes de enviar (aba Contadores).'); return; }
+  if(c.comissao_status==='enviado para pagamento'){ alert('Este contador já está na fila da aba Pagamentos.'); return; }
+  if(!confirm('Enviar a comissão de '+c.nome+' para a aba Pagamentos?'))return;
+  await setComissaoStatus(id,'enviado para pagamento');
+  alert('Enviado! Veja na aba Pagamentos (filtre por "enviado para pagamento").');
+}
+let _ccT=null;
+function ccSearch(){ clearTimeout(_ccT); _ccT=setTimeout(ccRender,200); }
+function ccLimpar(){ selContador='todos'; selPeriodo='todos'; selCloser=''; selCarteira=''; set('cc_q',''); set('cc_cont_in',''); ccLoad(); }
+async function atribuirContadorByName(rowId, name){
+  name=(name||'').trim(); let cid=null;
+  if(name!==''){ const c=CONTADORES.find(x=>x.nome===name)||CONTADORES.find(x=>(x.nome||'').toLowerCase()===name.toLowerCase()); if(!c){ alert('Contador nao encontrado: '+name); return; } cid=c.id; }
+  const {error}=await SB.from('conferencia_comissao').update({contador_id:cid}).eq('id',rowId);
+  if(error){ alert('Erro ao vincular: '+error.message); return; }
+  const r=ROWS.find(x=>x.id===rowId); if(r)r.contador_id=cid;
+  ccRender();
+}
+async function atribuirContador(rowId, contadorId){
+  const cid = contadorId ? parseInt(contadorId) : null;
+  const {error}=await SB.from('conferencia_comissao').update({contador_id:cid}).eq('id',rowId);
+  if(error){ alert('Erro ao vincular: '+error.message); return; }
+  const r=ROWS.find(x=>x.id===rowId); if(r)r.contador_id=cid;
+  ccRender();
+}
+function viewContadores(){
+  setTimeout(loadContadores,0);
+  return `<h2 class="sec">Contadores</h2><p class="lead">Cadastro dos contadores parceiros — nome, %, dados de pagamento e NF.</p>
+  <div class="card" style="margin-bottom:16px">
+    <h3 id="c_formtit">Novo contador</h3>
+    <div class="form2">
+      <label>Nome*<input id="c_nome" placeholder="Escritorio / contador"></label>
+      <label>Comissao %<select id="c_pct"><option value="">—</option><option>15</option><option>20</option><option>30</option></select></label>
+      <label>CNPJ / CPF<input id="c_doc"></label>
+      <label>Tipo da chave Pix<select id="c_tipo"><option value="">—</option><option>CPF</option><option>CNPJ</option><option>E-mail</option><option>Telefone</option><option>Aleatoria</option></select></label>
+      <label>Chave Pix<input id="c_pix"></label>
+      <label>Nome da conta<input id="c_conta"></label>
+      <label>Link da NF<input id="c_nf"></label>
+      <label>Status<select id="c_status"><option>ativo</option><option>inativo</option><option>aguardando NF</option></select></label>
+      <label>Carteira<select id="c_carteira"><option value="">—</option><option>Barbara</option><option>Mirian</option><option>Juliana</option></select></label>
+      <label class="full">Link do Bitrix<input id="c_bitrix" placeholder="https://...bitrix24.com.br/..."></label>
+      <label class="full">Observacao<input id="c_obs"></label>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+      <button class="btnp" onclick="salvarContador()">Salvar</button>
+      <button class="btng" id="c_cancel" style="display:none" onclick="cancelarContador()">Cancelar edicao</button>
+      <span id="c_msg" class="small muted"></span>
+    </div>
+  </div>
+  <div class="toolbar"><input class="search" id="c_q" placeholder="Buscar contador..." oninput="renderContadoresList()"><select id="c_carteira_f" onchange="renderContadoresList()"><option value="">Todas as carteiras</option><option>Barbara</option><option>Mirian</option><option>Juliana</option><option value="__sem">Sem carteira</option></select><span class="count" id="c_count"></span></div>
+  <div id="c_list"><div class="muted small">Carregando...</div></div>`;
+}
+function val(id){const e=document.getElementById(id);return e?(e.value||'').trim():''}
+function set(id,v){const e=document.getElementById(id);if(e)e.value=(v==null?'':v)}
+function cForm(){return {nome:val('c_nome'),percentual:(val('c_pct')?parseInt(val('c_pct')):null),cnpj_cpf:val('c_doc'),tipo_pix:val('c_tipo'),chave_pix:val('c_pix'),nome_conta:val('c_conta'),link_nf:val('c_nf'),status:val('c_status'),carteira:val('c_carteira'),bitrix_url:val('c_bitrix'),observacao:val('c_obs')}}
+async function loadContadores(){
+  const el=document.getElementById('c_list'); if(!el)return;
+  const {data,error}=await SB.from('contadores').select('*').order('nome');
+  if(error){ el.innerHTML='<div class="empty"><div class="big">Tabela ainda nao existe</div>Rode o SQL da tabela contadores no Supabase. ('+error.message+')</div>'; return; }
+  CONTADORES=data||[]; renderContadoresList();
+}
+function renderContadoresList(){
+  const el=document.getElementById('c_list'); if(!el)return;
+  if(!CONTADORES.length){ el.innerHTML='<div class="empty"><div class="big">Nenhum contador ainda</div>Cadastre o primeiro no formulario acima.</div>'; return; }
+  const q=((document.getElementById('c_q')||{}).value||'').trim().toLowerCase();
+  const cf=((document.getElementById('c_carteira_f')||{}).value||'');
+  let list=CONTADORES;
+  if(q) list=list.filter(c=>(c.nome||'').toLowerCase().includes(q));
+  if(cf==='__sem') list=list.filter(c=>!c.carteira); else if(cf) list=list.filter(c=>c.carteira===cf);
+  const cc=document.getElementById('c_count'); if(cc) cc.textContent = (q||cf) ? (list.length+' de '+CONTADORES.length) : (CONTADORES.length+' contadores');
+  const shown=list.slice(0,200);
+  const rows=shown.map(c=>`<tr><td>${c.nome||''}</td><td class="num">${c.percentual?c.percentual+'%':'—'}</td><td>${c.carteira||'—'}</td><td>${c.cnpj_cpf||'—'}</td><td>${c.chave_pix||'—'}${c.tipo_pix?' <span class="muted small">('+c.tipo_pix+')</span>':''}</td><td><span class="pill s-${c.status==='ativo'?'PAGO':'SEM'}">${c.status||''}</span></td><td><button class="lk" onclick="editarContador(${c.id})">editar</button> &nbsp; <button class="lk" onclick="excluirContador(${c.id})">excluir</button></td></tr>`).join('');
+  el.innerHTML=`<div class="card" style="padding:0"><div class="tablewrap"><table class="tfit"><colgroup><col style="width:26%"><col style="width:6%"><col style="width:12%"><col style="width:15%"><col style="width:16%"><col style="width:9%"><col style="width:16%"></colgroup><thead><tr><th>Contador</th><th class="num">%</th><th>Carteira</th><th>CNPJ/CPF</th><th>Pix</th><th>Status</th><th>Acoes</th></tr></thead><tbody>${rows}</tbody></table></div></div>`+(list.length>200?`<div class="muted small" style="margin-top:8px">+ ${list.length-200} (refine a busca)</div>`:'');
+}
+async function salvarContador(){
+  const d=cForm(), msg=document.getElementById('c_msg');
+  if(!d.nome){ msg.textContent='Informe o nome.'; return; }
+  msg.textContent='Salvando...';
+  const res = edC ? await SB.from('contadores').update(d).eq('id',edC) : await SB.from('contadores').insert(d);
+  if(res.error){ msg.textContent='Erro: '+res.error.message; return; }
+  msg.textContent=''; cancelarContador(); await loadContadores();
+}
+function editarContador(id){
+  const c=CONTADORES.find(x=>x.id===id); if(!c)return; edC=id;
+  set('c_nome',c.nome);set('c_pct',c.percentual||'');set('c_doc',c.cnpj_cpf);set('c_tipo',c.tipo_pix);set('c_pix',c.chave_pix);set('c_conta',c.nome_conta);set('c_nf',c.link_nf);set('c_status',c.status||'ativo');set('c_carteira',c.carteira||'');set('c_bitrix',c.bitrix_url);set('c_obs',c.observacao);
+  document.getElementById('c_formtit').textContent='Editar contador';
+  document.getElementById('c_cancel').style.display='inline-block';
+  document.getElementById('c_nome').scrollIntoView({behavior:'smooth',block:'center'});
+}
+function cancelarContador(){
+  edC=null; ['c_nome','c_pct','c_doc','c_tipo','c_pix','c_conta','c_nf','c_carteira','c_bitrix','c_obs'].forEach(i=>set(i,'')); set('c_status','ativo');
+  const t=document.getElementById('c_formtit'); if(t)t.textContent='Novo contador';
+  const cc=document.getElementById('c_cancel'); if(cc)cc.style.display='none';
+}
+async function excluirContador(id){
+  if(!confirm('Excluir este contador?'))return;
+  const {error}=await SB.from('contadores').delete().eq('id',id);
+  if(error){ alert('Erro: '+error.message); return; }
+  await loadContadores();
+}
+function viewComissaoVendedores(){
+  if(!ROWS.length) return `<h2 class="sec">Comissao vendedores</h2>`+semDados();
+  const k=agg();
+  const body=k.closers.map(c=>`<tr><td>${c.closer}</td><td class="num">${c.total}</td><td class="num">${c.pago}</td><td class="num">${fmt(c.pagoRS)}</td><td class="num muted">a definir</td></tr>`).join('');
+  return `<h2 class="sec">Comissao vendedores</h2><p class="lead">Comissao dos closers — regra a definir. Abaixo, totais por vendedor.</p>
+  <div class="banner warn">Regra de comissao de vendedor a definir.</div>
+  <div class="card" style="padding:0"><div class="tablewrap"><table><thead><tr><th>Vendedor</th><th class="num">Clientes</th><th class="num">Em dia</th><th class="num">Pago</th><th class="num">Comissao</th></tr></thead><tbody>${body}</tbody></table></div></div>`;
+}
+
+function render(){
+  elTabs();
+  const v=$('view');
+  if(tab==='Pagamentos')v.innerHTML=viewPagamentos();
+  else if(tab==='Vendas')v.innerHTML=viewVendas();
+  else if(tab==='Comissão contadores')v.innerHTML=viewComissaoContadores();
+  else if(tab==='Contadores')v.innerHTML=viewContadores();
+  else if(tab==='Comissão vendedores')v.innerHTML=viewComissaoVendedores();
+  $('foot').innerHTML='Login e acesso por papel via Supabase. Acesso travado no servidor (RLS): o vendedor nao le o financeiro. Pago = Situacao Recebida/Confirmada no Asaas.';
+}
+
+init();
+</script>
+</body>
+</html>
