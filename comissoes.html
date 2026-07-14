@@ -126,7 +126,7 @@ const CONTAS_DB = supabase.createClient("https://qvceorcngqsygasiivbn.supabase.c
 const TABS=['Vendas','Comissão vendedores','Contadores','Clientes','Comissão contadores','Pagamentos'];
 const ALLOWED={
   admin:TABS,
-  farmer:['Contadores','Comissão contadores','Pagamentos'],
+  farmer:['Contadores','Clientes','Comissão contadores','Pagamentos'],
   financeiro:TABS,
   vendedor:['Vendas'],
 };
