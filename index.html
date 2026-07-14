@@ -236,7 +236,7 @@
     <div class="panel">
       <h2>Transações <span class="muted" id="cp_count"></span></h2>
       <table id="cp_tabela">
-        <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Conta</th><th class="right">Valor</th><th>Arquivo</th><th class="right">Valor NF</th></tr></thead>
+        <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Conta</th><th class="right">Valor</th><th>Boleto / NF</th><th class="right">Valor NF</th></tr></thead>
         <tbody id="cp_tbody"></tbody>
       </table>
     </div>
@@ -353,7 +353,8 @@
         <div class="field"><label>Juros/Multa (R$)</label><input type="number" step="0.01" min="0" id="d_juros" placeholder="0,00"><small class="muted">vai pra 5.2 Juros no mês do pagamento</small></div>
       </div>
       <div class="field" style="margin-top:8px"><label>Observações</label><textarea id="d_obs" rows="2" placeholder="Opcional"></textarea></div>
-      <div class="field" style="margin-top:8px"><label>Anexo (boleto/NF)</label><input type="file" id="d_anexo" accept="application/pdf,image/*"></div>
+      <div class="field" style="margin-top:8px"><label>Boleto / Comprovante</label><input type="file" id="d_anexo" accept="application/pdf,image/*"><small class="muted" id="d_anexo_cur"></small></div>
+      <div class="field" style="margin-top:8px"><label>Nota Fiscal (comprovante fiscal)</label><input type="file" id="d_anexo_nf" accept="application/pdf,image/*"><small class="muted" id="d_anexo_nf_cur"></small></div>
     </div>
     <div class="modal-foot"><span id="d_status" class="muted"></span><button class="btn-ghost" id="d_voltar">Voltar</button><button class="btn" id="d_salvar">Salvar</button></div>
   </div>
@@ -591,7 +592,9 @@ function renderLanc(){
   tb.innerHTML=rows.map(c=>{
     const[cls,lbl]=situacao(c);
     const rec=c.recorrencia&&c.recorrencia!=='nenhuma'?`<span class="tag rec">↻ ${recLabel[c.recorrencia]}</span>`:'';
-    const anexo=c.arquivo_nf?'📎':(c.anexo_path?`<a class="link" onclick="verAnexo('${c.anexo_path}')">📎</a>`:'<span class="muted">—</span>');
+    const bolIco=c.anexo_path?`<a class="link" onclick="verAnexo('${c.anexo_path}')" title="Boleto/Comprovante">📎</a>`:'';
+    const nfIco=(c.arquivo_nf&&c.arquivo_nf.indexOf('/')>-1)?`<a class="link" onclick="verAnexo('${c.arquivo_nf}')" title="Nota Fiscal">🧾</a>`:'';
+    const anexo=(bolIco||nfIco)?`${bolIco} ${nfIco}`.trim():(c.arquivo_nf?'📎':'<span class="muted">—</span>');
     const acao=c.status==='a_pagar'?`<button class="btn-pay btn-sm" onclick="pagar('${c.id}')">Dar baixa</button>`:`<button class="btn-ghost btn-sm" onclick="desfazer('${c.id}')">Reabrir</button>`;
     return `<tr><td>${br(c.vencimento)}</td><td>${br(c.data_pagamento)}</td>
       <td class="resumo">${esc(c.descricao)}${rec}<br><span class="chip">${esc(catTxt(c))}</span> <small>${esc(c.fornecedor||'')}</small></td>
@@ -602,6 +605,8 @@ function renderLanc(){
 
 // ---- Comprovantes ----
 function temComp(c){return !!(c.arquivo_nf||c.anexo_path);}
+function nfPath(c){return c.arquivo_nf&&c.arquivo_nf.indexOf('/')>-1?c.arquivo_nf:null;}
+function nfLabel(c){return c.arquivo_nf&&c.arquivo_nf.indexOf('/')<0?c.arquivo_nf:null;}
 function renderComp(){
   let base=CONTAS.filter(c=>{const r=refDate(c);return r&&r.slice(0,7)===CP_MES;});
   if(CP_CONTA)base=base.filter(c=>c.conta===CP_CONTA);
@@ -612,26 +617,41 @@ function renderComp(){
   $('#cp_count').textContent=`(${rows.length})`;
   const tb=$('#cp_tbody');
   if(!rows.length){tb.innerHTML='<tr><td colspan="7" class="empty">Nenhuma transação neste mês/conta.</td></tr>';return;}
-  tb.innerHTML=rows.map(c=>{let arq;
-    if(c.anexo_path)arq=`<a class="link" onclick="verAnexo('${c.anexo_path}')">📎 ver</a>`;
-    else if(c.arquivo_nf)arq=`<span class="muted">${esc(c.arquivo_nf)}</span> <button class="btn-ghost btn-sm" onclick="carregarComp('${c.id}')">Carregar PDF</button>`;
-    else arq=`<span class="tag vencida">sem</span> <button class="btn-ghost btn-sm" onclick="carregarComp('${c.id}')">Carregar</button>`;
+  tb.innerHTML=rows.map(c=>{
+    const rm=(slot)=>` <a class="link" title="remover comprovante" style="color:#c0392b;font-weight:bold;text-decoration:none" onclick="removerAnexo('${c.id}','${slot}')">✕</a>`;
+    const bol=c.anexo_path?`<a class="link" onclick="verAnexo('${c.anexo_path}')">📎 boleto</a>${rm('boleto')}`:`<button class="btn-ghost btn-sm" onclick="carregarComp('${c.id}','boleto')">+ boleto</button>`;
+    const np=nfPath(c),nl=nfLabel(c);let nf;
+    if(np)nf=`<a class="link" onclick="verAnexo('${np}')">🧾 NF</a>${rm('nf')}`;
+    else if(nl)nf=`<span class="muted">${esc(nl)}</span> <button class="btn-ghost btn-sm" onclick="carregarComp('${c.id}','nf')">Carregar</button>${rm('nf')}`;
+    else nf=`<button class="btn-ghost btn-sm" onclick="carregarComp('${c.id}','nf')">+ NF</button>`;
+    const arq=`${bol}<br>${nf}`;
     return `<tr><td>${br(refDate(c))}</td><td>${esc(c.descricao)}</td><td>${esc(catTxt(c))}</td><td>${esc(c.conta||'—')}</td><td class="right">${fmt(c.valor)}</td><td>${arq}</td><td class="right">${c.valor_nf!=null?fmt(c.valor_nf):'<span class="muted">—</span>'}</td></tr>`;}).join('');
 }
 
 // ---- Carregar comprovante (aba Comprovantes) ----
-let CP_UPLOAD_ID=null;
-function carregarComp(id){CP_UPLOAD_ID=id;const f=$('#cp_file');f.value='';f.click();}
+let CP_UPLOAD_ID=null,CP_UPLOAD_SLOT='boleto';
+function carregarComp(id,slot){CP_UPLOAD_ID=id;CP_UPLOAD_SLOT=slot||'boleto';const f=$('#cp_file');f.value='';f.click();}
 window.carregarComp=carregarComp;
+async function removerAnexo(id,slot){
+  const isNf=slot==='nf';
+  if(!confirm('Remover o '+(isNf?'comprovante fiscal (NF)':'boleto/comprovante')+' deste lançamento?\n\n(O arquivo NÃO é apagado do storage — só desvincula do lançamento.)'))return;
+  const upd=isNf?{arquivo_nf:null,comprovante_fiscal:false}:{anexo_path:null};
+  const {error}=await db.from('contas').update(upd).eq('id',id);
+  if(error){toast('Erro: '+error.message,true);return;}
+  toast(isNf?'NF desvinculada ✓':'Boleto/comprovante desvinculado ✓');await carregar();
+}
+window.removerAnexo=removerAnexo;
 async function compUpload(){
   const f=$('#cp_file').files[0];if(!f||!CP_UPLOAD_ID)return;
-  toast('Enviando comprovante…');
-  const path=Date.now()+'_'+f.name.replace(/[^\w.\-]/g,'_');
+  const isNf=CP_UPLOAD_SLOT==='nf';
+  toast(isNf?'Enviando nota fiscal…':'Enviando boleto…');
+  const path=(isNf?'nf/':'')+Date.now()+'_'+f.name.replace(/[^\w.\-]/g,'_');
   const {error}=await db.storage.from('anexos').upload(path,f,{contentType:f.type||'application/pdf',upsert:true});
   if(error){toast('Erro ao enviar: '+error.message,true);return;}
-  const {error:e2}=await db.from('contas').update({anexo_path:path}).eq('id',CP_UPLOAD_ID);
+  const upd=isNf?{arquivo_nf:path,comprovante_fiscal:true}:{anexo_path:path};
+  const {error:e2}=await db.from('contas').update(upd).eq('id',CP_UPLOAD_ID);
   if(e2){toast('Erro: '+e2.message,true);return;}
-  CP_UPLOAD_ID=null;toast('Comprovante anexado ✓');await carregar();
+  CP_UPLOAD_ID=null;toast(isNf?'Nota fiscal anexada ✓':'Boleto anexado ✓');await carregar();
 }
 // ---- Nova despesa (modal) ----
 function abrirDespesa(id){
@@ -652,7 +672,10 @@ function abrirDespesa(id){
     $('#d_forma').value='';$('#d_conta').value='';$('#d_rec').value='nenhuma';$('#d_pago').checked=false;$('#d_obs').value='';
     $('#d_juros').value='';$('#d_dtpago').value='';
   }
-  $('#d_anexo').value='';$('#d_status').textContent='';
+  $('#d_anexo').value='';$('#d_anexo_nf').value='';
+  $('#d_anexo_cur').textContent=c&&c.anexo_path?'✓ já tem boleto/comprovante (envie outro só se quiser substituir)':'';
+  $('#d_anexo_nf_cur').textContent=c&&c.arquivo_nf?'✓ já tem nota fiscal (envie outra só se quiser substituir)':'';
+  $('#d_status').textContent='';
   $('#despesa_modal').style.display='flex';
 }
 window.abrirDespesa=abrirDespesa;
@@ -668,6 +691,8 @@ async function salvarDespesa(){
       if(ex&&ex.length)forn_id=ex[0].id;else{const{data,error}=await db.from('fornecedores').insert({nome:fnome}).select().single();if(error)throw error;forn_id=data.id;}}
     let anexo_path=null;const file=$('#d_anexo').files[0];
     if(file){const path=Date.now()+'_'+file.name.replace(/[^\w.\-]/g,'_');const{error}=await db.storage.from('anexos').upload(path,file);if(error)throw error;anexo_path=path;}
+    let nf_path=null;const fileNf=$('#d_anexo_nf').files[0];
+    if(fileNf){const path='nf/'+Date.now()+'_'+fileNf.name.replace(/[^\w.\-]/g,'_');const{error}=await db.storage.from('anexos').upload(path,fileNf);if(error)throw error;nf_path=path;}
     const comp=$('#d_comp').value||venc,forma=$('#d_forma').value||null,conta=$('#d_conta').value||null;
     const ref=$('#d_ref').value.trim()||null,cc=$('#d_cc').value.trim()||null,obs=$('#d_obs').value.trim()||null;
     const pagoChk=$('#d_pago').checked;
@@ -679,6 +704,7 @@ async function salvarDespesa(){
         recorrencia:$('#d_rec').value,forma_pagamento:forma,conta:conta,codigo_referencia:ref,centro_custo:cc,observacao:obs,juros_multa:juros,
         status:pagoChk?'pago':'a_pagar',data_pagamento:pagoChk?(dtpago||atual.data_pagamento||today()):null};
       if(anexo_path)payload.anexo_path=anexo_path;
+      if(nf_path){payload.arquivo_nf=nf_path;payload.comprovante_fiscal=true;}
       const{error}=await db.from('contas').update(payload).eq('id',DEDIT);if(error)throw error;
       toast('Lançamento atualizado ✓');
     }else{
@@ -689,7 +715,7 @@ async function salvarDespesa(){
         rows.push({descricao:N>1?`${desc} (${i+1}/${N})`:desc,fornecedor_id:forn_id,categoria_id:cat,valor:vp,
           vencimento:addMonths(venc,i),data_competencia:comp,data_pagamento:pago?(dtpago||venc):null,status:pago?'pago':'a_pagar',
           recorrencia:rec,forma_pagamento:forma,conta:conta,codigo_referencia:ref,centro_custo:cc,observacao:obs,juros_multa:i===0?juros:0,
-          anexo_path:i===0?anexo_path:null,origem:'manual'});}
+          anexo_path:i===0?anexo_path:null,arquivo_nf:i===0?nf_path:null,comprovante_fiscal:i===0?!!nf_path:false,origem:'manual'});}
       const{error}=await db.from('contas').insert(rows);if(error)throw error;
       toast(N>1?`Despesa lançada em ${N}×.`:'Despesa lançada ✓');
     }
