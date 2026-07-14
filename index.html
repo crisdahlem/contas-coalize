@@ -626,7 +626,7 @@ function renderComp(){
     if(np)nf=`<a class="link" onclick="verAnexo('${np}')">🧾 NF</a>${rm('nf')}`;
     else if(nl)nf=`<span class="muted">${esc(nl)}</span> <button class="btn-ghost btn-sm" onclick="carregarComp('${c.id}','nf')">Carregar</button>${rm('nf')}`;
     else nf=`<button class="btn-ghost btn-sm" onclick="carregarComp('${c.id}','nf')">+ NF</button>`;
-    const arq=`${bol}<br>${nf}`;
+    const arq=`<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">${bol}${nf}</div>`;
     return `<tr><td>${br(refDate(c))}</td><td>${esc(c.descricao)}</td><td>${esc(catTxt(c))}</td><td>${esc(c.conta||'—')}</td><td class="right">${fmt(c.valor)}</td><td>${arq}</td><td class="right">${c.valor_nf!=null?fmt(c.valor_nf):'<span class="muted">—</span>'}</td></tr>`;}).join('');
 }
 
