@@ -228,39 +228,70 @@ function semDados(msg){return `<div class="empty"><div class="big">Sem dados ain
 function aggContadores(){
   const map={};
   ROWS.forEach(r=>{ if(!r.contador_id)return; const c=contById(r.contador_id); if(!c)return; const id=String(c.id);
-    if(!map[id])map[id]={id:c.id,nome:c.nome,pct:c.percentual,status:c.comissao_status||'aguardando pagamento',clientes:0,base:0};
+    if(!map[id])map[id]={id:c.id,nome:c.nome,pct:c.percentual,status:c.comissao_status||'aguardando pagamento',prio:c.prioridade_pagamento||'Média',dprev:c.data_prevista_pagamento||'',dpag:c.data_pagamento||'',nf:c.link_nf||'',clientes:0,base:0};
     map[id].clientes++; map[id].base+=Number(r.valor_pago)||0; });
   return Object.values(map).map(x=>{ x.comissao = x.pct? x.base*x.pct/100 : 0; return x; }).sort((a,b)=>b.comissao-a.comissao);
 }
 function viewPagamentos(){
   if(!ROWS.length) return `<h2 class="sec">Pagamentos</h2>`+semDados();
   setTimeout(async()=>{ if(!CONTADORES.length){ const {data}=await SB.from('contadores').select('*'); CONTADORES=data||[]; } pgRender(); },0);
-  return `<h2 class="sec">Pagamentos</h2><p class="lead">Comissões a pagar e já enviadas — busque e consulte por contador.</p>
+  return `<h2 class="sec">Pagamentos</h2><p class="lead">Fila de pagamento das comissões — prioridade, datas previstas/efetivas e status detalhado.</p>
   <div id="pg_kpis"></div>
   <div class="toolbar">
     <input class="search" id="pg_q" placeholder="Buscar contador..." oninput="pgRender()">
-    <select id="pg_st" onchange="pgRender()"><option value="">Todos (enviados)</option><option>enviado para pagamento</option><option>pago</option></select>
+    <select id="pg_st" onchange="pgRender()"><option value="">Todos os status</option>${PAY_PIPE.map(s=>`<option>${s}</option>`).join('')}</select>
+    <label class="small muted">Ordenar:</label>
+    <select id="pg_ord" onchange="pgRender()"><option value="prio">Prioridade</option><option value="dprev">Data prevista</option><option value="nome">Contador</option></select>
     <span class="count" id="pg_c"></span>
   </div>
   <div id="pg_list"><div class="muted small">Carregando...</div></div>`;
 }
 function pgRender(){
   if(!document.getElementById('pg_list'))return;
-  const ag=aggContadores().filter(x=>x.status==='enviado para pagamento'||x.status==='pago');
-  const totEnv=ag.filter(x=>x.status==='enviado para pagamento').reduce((s,x)=>s+x.comissao,0);
-  const totPago=ag.filter(x=>x.status==='pago').reduce((s,x)=>s+x.comissao,0);
-  const nEnv=ag.filter(x=>x.status==='enviado para pagamento').length, nPago=ag.filter(x=>x.status==='pago').length;
+  const PEND=['na fila','enviado para pagamento','Aguardando NF','aguardando comprovante'];
+  const ag=aggContadores().filter(x=>PAY_PIPE.includes(x.status));
+  const pend=ag.filter(x=>PEND.includes(x.status));
+  const totPend=pend.reduce((s,x)=>s+x.comissao,0);
+  const pagos=ag.filter(x=>x.status==='pago');
+  const totPago=pagos.reduce((s,x)=>s+x.comissao,0);
   const kp=document.getElementById('pg_kpis');
   if(kp) kp.innerHTML=`<div class="kpis">
-    <div class="kpi red"><div class="lab">A pagar (enviados)</div><div class="val">${fmt(totEnv)}</div><div class="sub">${nEnv} contadores</div></div>
-    <div class="kpi green"><div class="lab">Pagos</div><div class="val">${fmt(totPago)}</div><div class="sub">${nPago} contadores</div></div>
-    <div class="kpi"><div class="lab">Na fila</div><div class="val">${ag.length}</div></div></div>`;
-  if(!ag.length){ document.getElementById('pg_list').innerHTML='<div class="empty"><div class="big">Nada enviado para pagamento ainda</div>Use o botão "Enviar para pagamento" na aba Comissão contadores — só o que foi conferido e está OK aparece aqui.</div>'; const cc0=document.getElementById('pg_c'); if(cc0)cc0.textContent=''; return; }
-  const q=(val('pg_q')||'').toLowerCase(); const st=val('pg_st');
+    <div class="kpi red"><div class="lab">A pagar</div><div class="val">${fmt(totPend)}</div><div class="sub">${pend.length} contadores pendentes</div></div>
+    <div class="kpi green"><div class="lab">Pagos</div><div class="val">${fmt(totPago)}</div><div class="sub">${pagos.length} contadores confirmados</div></div>
+    <div class="kpi"><div class="lab">Na fila</div><div class="val">${pend.length}</div><div class="sub">aguardando processamento</div></div></div>`;
+  if(!ag.length){ document.getElementById('pg_list').innerHTML='<div class="empty"><div class="big">Nada na fila de pagamento ainda</div>Use o botão "Enviar para pagamento" na aba Comissão contadores — só o que foi conferido e está OK aparece aqui.</div>'; const cc0=document.getElementById('pg_c'); if(cc0)cc0.textContent=''; return; }
+  const q=(val('pg_q')||'').toLowerCase(); const st=val('pg_st'); const ord=val('pg_ord')||'prio';
   let list=ag.filter(x=>(!q||(x.nome||'').toLowerCase().includes(q))&&(!st||x.status===st));
+  const pr={'Alta':0,'Média':1,'Baixa':2};
+  const pv=x=>(pr[x.prio]!==undefined?pr[x.prio]:1);
+  if(ord==='prio') list.sort((a,b)=>(pv(a)-pv(b))||String(a.dprev||'9999').localeCompare(String(b.dprev||'9999'))||String(a.nome||'').localeCompare(String(b.nome||'')));
+  else if(ord==='dprev') list.sort((a,b)=>String(a.dprev||'9999').localeCompare(String(b.dprev||'9999'))||String(a.nome||'').localeCompare(String(b.nome||'')));
+  else list.sort((a,b)=>String(a.nome||'').localeCompare(String(b.nome||'')));
   const cc=document.getElementById('pg_c'); if(cc)cc.textContent=list.length+' contadores';
-  const body=list.slice(0,300).map(x=>`<tr><td>${x.nome}</td><td class="num">${x.clientes}</td><td class="num">${x.pct?x.pct+'%':'—'}</td><td class="num">${fmt(x.comissao)}</td><td>${statusPill(x.status)}</td></tr>`).join('');
-  document.getElementById('pg_list').innerHTML=`<div class="card" style="padding:0"><div class="tablewrap"><table><thead><tr><th>Contador</th><th class="num">Clientes</th><th class="num">%</th><th class="num">Comissão</th><th>Status</th></tr></thead><tbody>${body}</tbody></table></div></div>`+(list.length>300?`<div class="muted small" style="margin-top:8px">+ ${list.length-300} (refine a busca)</div>`:'');
+  const canEdit=(ME.role==='admin'||ME.role==='financeiro');
+  const inSt='style="padding:5px 7px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--ink);font-size:12px"';
+  const body=list.slice(0,300).map(x=>{
+    const stCell=canEdit?`<select onchange="pgSetStatus(${x.id},this.value)" ${inSt}>${PAY_PIPE.map(o=>`<option ${o===x.status?'selected':''}>${o}</option>`).join('')}</select>`:statusPill(x.status);
+    const dpCell=canEdit?`<input type="date" value="${x.dprev?String(x.dprev).slice(0,10):''}" onchange="pgSetData(${x.id},'data_prevista_pagamento',this.value)" ${inSt}>`:fmtData(x.dprev);
+    const deCell=canEdit?`<input type="date" value="${x.dpag?String(x.dpag).slice(0,10):''}" onchange="pgSetData(${x.id},'data_pagamento',this.value)" ${inSt}>`:fmtData(x.dpag);
+    return `<tr><td>${x.nome}</td><td class="num">${x.clientes}</td><td class="num">${x.pct?x.pct+'%':'—'}</td><td class="num">${fmt(x.comissao)}</td><td>${prioPill(x.prio)}</td><td>${dpCell}</td><td>${deCell}</td><td>${stCell}</td><td>${linkBtn(x.nf,'Abrir NF')}</td></tr>`;
+  }).join('');
+  document.getElementById('pg_list').innerHTML=`<div class="card" style="padding:0"><div class="tablewrap"><table><thead><tr><th>Contador</th><th class="num">Clientes</th><th class="num">%</th><th class="num">Comissão</th><th>Prioridade</th><th>Data prevista</th><th>Data pagamento</th><th>Status</th><th>NF</th></tr></thead><tbody>${body}</tbody></table></div></div>`+(list.length>300?`<div class="muted small" style="margin-top:8px">+ ${list.length-300} (refine a busca)</div>`:'');
+}
+async function pgSetStatus(id,status){
+  const c=contById(id); const upd={comissao_status:status};
+  if(status==='pago' && c && !c.data_pagamento) upd.data_pagamento=new Date().toISOString().slice(0,10);
+  const {error}=await SB.from('contadores').update(upd).eq('id',id);
+  if(error){ alert('Erro ao salvar status: '+error.message); return; }
+  if(c){ c.comissao_status=status; if(upd.data_pagamento)c.data_pagamento=upd.data_pagamento; }
+  pgRender();
+}
+async function pgSetData(id,campo,valor){
+  const upd={}; upd[campo]=(valor||null);
+  const {error}=await SB.from('contadores').update(upd).eq('id',id);
+  if(error){ alert('Erro ao salvar data: '+error.message); return; }
+  const c=contById(id); if(c)c[campo]=(valor||null);
+  pgRender();
 }
 function viewVendas(){
   if(ME.role==='vendedor') return `<h2 class="sec">Vendas</h2><div class="banner">Voce ve apenas as suas vendas. Comissoes, pagamentos e o sistema financeiro nao aparecem no seu acesso.</div>`+semDados('Suas vendas aparecerao aqui (cadastro entra na proxima fase).');
@@ -373,10 +404,14 @@ function ccRender(){
 }
 const CARTEIRAS=['Juliana Marques','Mirian Carvalho','Bárbara','Gracielle Priscila Resende dos Santos','Layara Watanabe','Lizandra','Kauane Tavares','Jennifer Allebrandt','Ana Carolina Caldeira','Gabriella Bruno','Danielle Domiciano','Adriele Santos'];
 const cartOpts=sel=>CARTEIRAS.map(c=>'<option'+((sel&&c===sel)?' selected':'')+'>'+c+'</option>').join('');
-const STATUS_OPTS=['aguardando pagamento','enviado para pagamento','pago','não responde','arrumar dados','inadimplente','conferir dados bancários','Aguardando NF','Aguardando confirmar dados','Não emite NF'];
+const STATUS_OPTS=['aguardando pagamento','na fila','enviado para pagamento','Aguardando NF','aguardando comprovante','pago','cancelado','não responde','arrumar dados','inadimplente','conferir dados bancários','Aguardando confirmar dados','Não emite NF'];
+const PAY_PIPE=['na fila','enviado para pagamento','Aguardando NF','aguardando comprovante','pago','cancelado'];
 const STATUS_COLORS={
  'aguardando pagamento':['#fdf3cf','#7a5c00'],
+ 'na fila':['#eef1f4','#3b4350'],
  'enviado para pagamento':['#cfe2f3','#0c447c'],
+ 'aguardando comprovante':['#fdf3cf','#7a5c00'],
+ 'cancelado':['#d64457','#ffffff'],
  'pago':['#1e9e57','#ffffff'],
  'não responde':['#3f3f3f','#ffffff'],
  'arrumar dados':['#f9d6d3','#b42318'],
@@ -387,6 +422,11 @@ const STATUS_COLORS={
  'Não emite NF':['#a8302f','#ffffff']
 };
 function statusPill(s){ const c=STATUS_COLORS[s]||['#eef1f4','#444444']; return `<span style="background:${c[0]};color:${c[1]};padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:700">${s}</span>`; }
+function prioPill(p){ p=p||'Média'; const m={'Alta':['#fdeaed','#c23a4c'],'Média':['#fbf1da','#b7791f'],'Baixa':['#eef1f4','#6b7682']}; const c=m[p]||m['Média']; return `<span style="background:${c[0]};color:${c[1]};padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:700">${p}</span>`; }
+function maskTel(el){ const d=el.value.replace(/\D/g,'').slice(0,11); let o=d; if(d.length>10)o='('+d.slice(0,2)+') '+d.slice(2,7)+'-'+d.slice(7); else if(d.length>6)o='('+d.slice(0,2)+') '+d.slice(2,6)+'-'+d.slice(6); else if(d.length>2)o='('+d.slice(0,2)+') '+d.slice(2); else if(d.length>0)o='('+d; el.value=o; }
+function urlOk(u){ u=(u||'').trim(); if(!u)return ''; if(!/^https?:\/\//i.test(u))u='https://'+u; return u; }
+function linkBtn(u,label){ const h=urlOk(u); return h?`<a class="lk" href="${h.replace(/"/g,'&quot;')}" target="_blank" rel="noopener noreferrer">${label}</a>`:'<span class="muted">—</span>'; }
+function fmtData(d){ if(!d)return '—'; const p=String(d).slice(0,10).split('-'); return p.length===3?(p[2]+'/'+p[1]+'/'+p[0]):d; }
 async function setComissaoStatus(id,status){ if(!id)return; const {error}=await SB.from('contadores').update({comissao_status:status}).eq('id',id); if(error){alert('Erro ao salvar status: '+error.message);return;} const c=CONTADORES.find(x=>String(x.id)===String(id)); if(c)c.comissao_status=status; ccRender(); }
 async function enviarPagamento(id){
   const c=contById(id); if(!c){return;}
@@ -426,6 +466,9 @@ function viewContadores(){
       <label>Tipo da chave Pix<select id="c_tipo"><option value="">—</option><option>CPF</option><option>CNPJ</option><option>E-mail</option><option>Telefone</option><option>Aleatoria</option></select></label>
       <label>Chave Pix<input id="c_pix"></label>
       <label>Nome da conta<input id="c_conta"></label>
+      <label>Telefone<input id="c_tel" placeholder="(11) 99999-9999" oninput="maskTel(this)"></label>
+      <label>E-mail<input id="c_email" placeholder="contato@escritorio.com.br"></label>
+      <label>Prioridade de pagamento<select id="c_prio"><option>Alta</option><option selected>Média</option><option>Baixa</option></select></label>
       <label>Link da NF<input id="c_nf"></label>
       <label>Status<select id="c_status"><option>ativo</option><option>inativo</option><option>aguardando NF</option></select></label>
       <label>Carteira<select id="c_carteira"><option value="">—</option>${cartOpts('')}</select></label>
@@ -443,7 +486,7 @@ function viewContadores(){
 }
 function val(id){const e=document.getElementById(id);return e?(e.value||'').trim():''}
 function set(id,v){const e=document.getElementById(id);if(e)e.value=(v==null?'':v)}
-function cForm(){return {nome:val('c_nome'),percentual:(val('c_pct')?parseInt(val('c_pct')):null),cnpj_cpf:val('c_doc'),tipo_pix:val('c_tipo'),chave_pix:val('c_pix'),nome_conta:val('c_conta'),link_nf:val('c_nf'),status:val('c_status'),carteira:val('c_carteira'),bitrix_url:val('c_bitrix'),observacao:val('c_obs')}}
+function cForm(){return {nome:val('c_nome'),percentual:(val('c_pct')?parseInt(val('c_pct')):null),cnpj_cpf:val('c_doc'),tipo_pix:val('c_tipo'),chave_pix:val('c_pix'),nome_conta:val('c_conta'),telefone:(val('c_tel')||null),email:(val('c_email')||null),prioridade_pagamento:(val('c_prio')||'Média'),link_nf:val('c_nf'),status:val('c_status'),carteira:val('c_carteira'),bitrix_url:val('c_bitrix'),observacao:val('c_obs')}}
 async function loadContadores(){
   const el=document.getElementById('c_list'); if(!el)return;
   const {data,error}=await SB.from('contadores').select('*').order('nome');
@@ -460,12 +503,14 @@ function renderContadoresList(){
   if(cf==='__sem') list=list.filter(c=>!c.carteira); else if(cf) list=list.filter(c=>c.carteira===cf);
   const cc=document.getElementById('c_count'); if(cc) cc.textContent = (q||cf) ? (list.length+' de '+CONTADORES.length) : (CONTADORES.length+' contadores');
   const shown=list.slice(0,200);
-  const rows=shown.map(c=>`<tr><td>${c.nome||''}</td><td class="num">${c.percentual?c.percentual+'%':'—'}</td><td>${c.carteira||'—'}</td><td>${c.cnpj_cpf||'—'}</td><td>${c.chave_pix||'—'}${c.tipo_pix?' <span class="muted small">('+c.tipo_pix+')</span>':''}</td><td><span class="pill s-${c.status==='ativo'?'PAGO':'SEM'}">${c.status||''}</span></td><td><button class="lk" onclick="editarContador(${c.id})">editar</button> &nbsp; <button class="lk" onclick="excluirContador(${c.id})">excluir</button></td></tr>`).join('');
-  el.innerHTML=`<div class="card" style="padding:0"><div class="tablewrap"><table class="tfit"><colgroup><col style="width:26%"><col style="width:6%"><col style="width:12%"><col style="width:15%"><col style="width:16%"><col style="width:9%"><col style="width:16%"></colgroup><thead><tr><th>Contador</th><th class="num">%</th><th>Carteira</th><th>CNPJ/CPF</th><th>Pix</th><th>Status</th><th>Acoes</th></tr></thead><tbody>${rows}</tbody></table></div></div>`+(list.length>200?`<div class="muted small" style="margin-top:8px">+ ${list.length-200} (refine a busca)</div>`:'');
+  const trunc=(s,w)=>s?`<span title="${String(s).replace(/"/g,'&quot;')}" style="display:inline-block;max-width:${w}px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom">${s}</span>`:'—';
+  const rows=shown.map(c=>`<tr><td>${trunc(c.nome,220)}</td><td class="num">${c.percentual?c.percentual+'%':'—'}</td><td>${c.carteira||'—'}</td><td>${c.cnpj_cpf||'—'}</td><td>${c.chave_pix||'—'}${c.tipo_pix?' <span class="muted small">('+c.tipo_pix+')</span>':''}</td><td>${c.telefone||'—'}</td><td>${trunc(c.email,170)}</td><td>${prioPill(c.prioridade_pagamento)}</td><td>${linkBtn(c.bitrix_url,'Abrir Bitrix')}</td><td>${linkBtn(c.link_nf,'Abrir NF')}</td><td><span class="pill s-${c.status==='ativo'?'PAGO':'SEM'}">${c.status||''}</span></td><td><button class="lk" onclick="editarContador(${c.id})">editar</button> &nbsp; <button class="lk" onclick="excluirContador(${c.id})">excluir</button></td></tr>`).join('');
+  el.innerHTML=`<div class="card" style="padding:0"><div class="tablewrap"><table><thead><tr><th>Contador</th><th class="num">%</th><th>Carteira</th><th>CNPJ/CPF</th><th>Pix</th><th>Telefone</th><th>E-mail</th><th>Prioridade</th><th>Bitrix</th><th>NF</th><th>Status</th><th>Ações</th></tr></thead><tbody>${rows}</tbody></table></div></div>`+(list.length>200?`<div class="muted small" style="margin-top:8px">+ ${list.length-200} (refine a busca)</div>`:'');
 }
 async function salvarContador(){
   const d=cForm(), msg=document.getElementById('c_msg');
   if(!d.nome){ msg.textContent='Informe o nome.'; return; }
+  if(d.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)){ msg.textContent='E-mail inválido.'; return; }
   msg.textContent='Salvando...';
   const res = edC ? await SB.from('contadores').update(d).eq('id',edC) : await SB.from('contadores').insert(d);
   if(res.error){ msg.textContent='Erro: '+res.error.message; return; }
@@ -473,13 +518,13 @@ async function salvarContador(){
 }
 function editarContador(id){
   const c=CONTADORES.find(x=>x.id===id); if(!c)return; edC=id;
-  set('c_nome',c.nome);set('c_pct',c.percentual||'');set('c_doc',c.cnpj_cpf);set('c_tipo',c.tipo_pix);set('c_pix',c.chave_pix);set('c_conta',c.nome_conta);set('c_nf',c.link_nf);set('c_status',c.status||'ativo');set('c_carteira',c.carteira||'');set('c_bitrix',c.bitrix_url);set('c_obs',c.observacao);
+  set('c_nome',c.nome);set('c_pct',c.percentual||'');set('c_doc',c.cnpj_cpf);set('c_tipo',c.tipo_pix);set('c_pix',c.chave_pix);set('c_conta',c.nome_conta);set('c_tel',c.telefone||'');set('c_email',c.email||'');set('c_prio',c.prioridade_pagamento||'Média');set('c_nf',c.link_nf);set('c_status',c.status||'ativo');set('c_carteira',c.carteira||'');set('c_bitrix',c.bitrix_url);set('c_obs',c.observacao);
   document.getElementById('c_formtit').textContent='Editar contador';
   document.getElementById('c_cancel').style.display='inline-block';
   document.getElementById('c_nome').scrollIntoView({behavior:'smooth',block:'center'});
 }
 function cancelarContador(){
-  edC=null; ['c_nome','c_pct','c_doc','c_tipo','c_pix','c_conta','c_nf','c_carteira','c_bitrix','c_obs'].forEach(i=>set(i,'')); set('c_status','ativo');
+  edC=null; ['c_nome','c_pct','c_doc','c_tipo','c_pix','c_conta','c_tel','c_email','c_nf','c_carteira','c_bitrix','c_obs'].forEach(i=>set(i,'')); set('c_status','ativo'); set('c_prio','Média');
   const t=document.getElementById('c_formtit'); if(t)t.textContent='Novo contador';
   const cc=document.getElementById('c_cancel'); if(cc)cc.style.display='none';
 }
