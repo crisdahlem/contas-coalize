@@ -226,6 +226,7 @@
       <div class="field"><label>Comprovante</label>
         <select id="cp_filtro"><option value="">Todos</option><option value="com">Com comprovante</option><option value="sem">Sem comprovante</option></select>
       </div>
+      <div class="field"><label>Buscar por nome</label><input id="cp_busca" placeholder="fornecedor, descrição ou arquivo"></div>
       <button class="btn-ghost" id="cp_csv">Exportar CSV</button>
     </div>
     <div class="row">
@@ -394,7 +395,7 @@ function addMonths(iso,n){const[y,m,d]=iso.split('-').map(Number);const dt=new D
 
 let CONTAS=[],CATS=[],catById={},VIEW='resumo',ANO=new Date().getFullYear(),BASE='pago',MES='';
 let BANCOS=[],BEDIT=null,rChart=null;
-let CP_MES='',CP_CONTA='',CP_FILTRO='';
+let CP_MES='',CP_CONTA='',CP_FILTRO='',CP_BUSCA='';
 let LMES=new Date().toISOString().slice(0,7),LCONTA='',LBUSCA='',LSIT='',LDE='',LATE='';
 let FORNS=[],fornById={},FBUSCA='',FEDIT=null,DEDIT=null;
 
@@ -613,6 +614,7 @@ function renderComp(){
   const com=base.filter(temComp).length,sem=base.length-com;
   $('#cp_com').textContent=com;$('#cp_sem').textContent=sem;$('#cp_pct').textContent=base.length?((com/base.length*100).toFixed(1)+'%'):'—';
   let rows=base;if(CP_FILTRO==='com')rows=base.filter(temComp);else if(CP_FILTRO==='sem')rows=base.filter(c=>!temComp(c));
+  if(CP_BUSCA){const q=CP_BUSCA.toLowerCase();rows=rows.filter(c=>((c.descricao||'')+' '+(c.fornecedor||'')+' '+(c.arquivo_nf||'')+' '+(c.anexo_path||'')).toLowerCase().includes(q));}
   rows=rows.slice().sort((a,b)=>refDate(a)<refDate(b)?-1:1);
   $('#cp_count').textContent=`(${rows.length})`;
   const tb=$('#cp_tbody');
@@ -793,6 +795,7 @@ $('#d_pago').onchange=()=>{if($('#d_pago').checked){if(!$('#d_dtpago').value)$('
 $('#cp_mes').onchange=()=>{CP_MES=$('#cp_mes').value;renderComp();};
 $('#cp_conta').onchange=()=>{CP_CONTA=$('#cp_conta').value;renderComp();};
 $('#cp_filtro').onchange=()=>{CP_FILTRO=$('#cp_filtro').value;renderComp();};
+$('#cp_busca').oninput=()=>{CP_BUSCA=$('#cp_busca').value.trim();renderComp();};
 $('#cp_file').onchange=compUpload;
 $('#cp_csv').onclick=expComp;
 
