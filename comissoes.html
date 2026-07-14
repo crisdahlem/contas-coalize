@@ -357,7 +357,8 @@ function ccRender(){
         <button class="btnp" onclick="enviarPagamento(${c?c.id:0})">Enviar para pagamento</button>
       </div>`;
   } else {
-    sum.innerHTML=`<div class="toolbar"><span class="count">${rows.length} clientes · base ${fmt(totBase)} · comissao calculada ${fmt(totCom)} (apenas dos vinculados)</span></div>`;
+    const verTot=(ME.role==='admin'||ME.role==='financeiro');
+    sum.innerHTML=`<div class="toolbar"><span class="count">${rows.length} clientes${verTot?' · base '+fmt(totBase)+' · comissao calculada '+fmt(totCom)+' (apenas dos vinculados)':''}</span></div>`;
   }
   const esc2=s=>(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;');
   const MES=['jan','fev','mar','abr','mai','jun'];
