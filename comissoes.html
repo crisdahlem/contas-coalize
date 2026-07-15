@@ -456,23 +456,30 @@ async function atribuirContador(rowId, contadorId){
 }
 function viewContadores(){
   setTimeout(loadContadores,0);
+  const sec=(t,mt)=>`<div class="full" style="font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700;border-bottom:1px solid var(--line);padding-bottom:5px${mt?';margin-top:8px':''}">${t}</div>`;
   return `<h2 class="sec">Contadores</h2><p class="lead">Cadastro dos contadores parceiros — nome, %, dados de pagamento e NF.</p>
   <div class="card" style="margin-bottom:16px">
     <h3 id="c_formtit">Novo contador</h3>
     <div class="form2">
+      ${sec('Dados do Contador')}
       <label>Nome*<input id="c_nome" placeholder="Escritorio / contador"></label>
       <label>Comissao %<select id="c_pct"><option value="">—</option><option>15</option><option>20</option><option>30</option></select></label>
       <label>CNPJ / CPF<input id="c_doc"></label>
-      <label>Tipo da chave Pix<select id="c_tipo"><option value="">—</option><option>CPF</option><option>CNPJ</option><option>E-mail</option><option>Telefone</option><option>Aleatoria</option></select></label>
-      <label>Chave Pix<input id="c_pix"></label>
-      <label>Nome da conta<input id="c_conta"></label>
+      <label>Carteira<select id="c_carteira"><option value="">—</option>${cartOpts('')}</select></label>
+      <label>Status<select id="c_status"><option>ativo</option><option>inativo</option><option>aguardando NF</option></select></label>
+      ${sec('Dados Bancários',1)}
+      <label>Tipo da chave PIX<select id="c_tipo"><option value="">—</option><option>CPF</option><option>CNPJ</option><option>E-mail</option><option>Telefone</option><option>Aleatoria</option></select></label>
+      <label>Chave PIX<input id="c_pix"></label>
+      <label class="full">Nome do favorecido da chave PIX<input id="c_conta"><span style="font-size:11.5px;color:var(--muted);line-height:1.45;margin-top:2px">Preencha apenas quando a chave PIX estiver em nome de outra pessoa ou empresa diferente do contador cadastrado (ex.: conta do sócio, outra empresa do grupo, conta autorizada de terceiro). Se a chave PIX é do próprio contador, deixe vazio.</span></label>
+      ${sec('Pessoa de Contato',1)}
+      <label>Nome do contato<input id="c_ctnome" placeholder="Responsável pelo atendimento"></label>
       <label>Telefone<input id="c_tel" placeholder="(11) 99999-9999" oninput="maskTel(this)"></label>
       <label>E-mail<input id="c_email" placeholder="contato@escritorio.com.br"></label>
-      <label>Prioridade de pagamento<select id="c_prio"><option>Alta</option><option selected>Média</option><option>Baixa</option></select></label>
+      ${sec('Links',1)}
       <label>Link da NF<input id="c_nf"></label>
-      <label>Status<select id="c_status"><option>ativo</option><option>inativo</option><option>aguardando NF</option></select></label>
-      <label>Carteira<select id="c_carteira"><option value="">—</option>${cartOpts('')}</select></label>
-      <label class="full">Link do Bitrix<input id="c_bitrix" placeholder="https://...bitrix24.com.br/..."></label>
+      <label>Link do Bitrix<input id="c_bitrix" placeholder="https://...bitrix24.com.br/..."></label>
+      ${sec('Informações adicionais',1)}
+      <label>Prioridade de pagamento<select id="c_prio"><option>Alta</option><option selected>Média</option><option>Baixa</option></select></label>
       <label class="full">Observacao<input id="c_obs"></label>
     </div>
     <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
@@ -486,7 +493,7 @@ function viewContadores(){
 }
 function val(id){const e=document.getElementById(id);return e?(e.value||'').trim():''}
 function set(id,v){const e=document.getElementById(id);if(e)e.value=(v==null?'':v)}
-function cForm(){return {nome:val('c_nome'),percentual:(val('c_pct')?parseInt(val('c_pct')):null),cnpj_cpf:val('c_doc'),tipo_pix:val('c_tipo'),chave_pix:val('c_pix'),nome_conta:val('c_conta'),telefone:(val('c_tel')||null),email:(val('c_email')||null),prioridade_pagamento:(val('c_prio')||'Média'),link_nf:val('c_nf'),status:val('c_status'),carteira:val('c_carteira'),bitrix_url:val('c_bitrix'),observacao:val('c_obs')}}
+function cForm(){return {nome:val('c_nome'),percentual:(val('c_pct')?parseInt(val('c_pct')):null),cnpj_cpf:val('c_doc'),tipo_pix:val('c_tipo'),chave_pix:val('c_pix'),nome_conta:val('c_conta'),contato_nome:(val('c_ctnome')||null),contato_telefone:(val('c_tel')||null),contato_email:(val('c_email')||null),prioridade_pagamento:(val('c_prio')||'Média'),link_nf:val('c_nf'),status:val('c_status'),carteira:val('c_carteira'),bitrix_url:val('c_bitrix'),observacao:val('c_obs')}}
 async function loadContadores(){
   const el=document.getElementById('c_list'); if(!el)return;
   const {data,error}=await SB.from('contadores').select('*').order('nome');
@@ -504,13 +511,13 @@ function renderContadoresList(){
   const cc=document.getElementById('c_count'); if(cc) cc.textContent = (q||cf) ? (list.length+' de '+CONTADORES.length) : (CONTADORES.length+' contadores');
   const shown=list.slice(0,200);
   const trunc=(s,w)=>s?`<span title="${String(s).replace(/"/g,'&quot;')}" style="display:inline-block;max-width:${w}px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom">${s}</span>`:'—';
-  const rows=shown.map(c=>`<tr><td>${trunc(c.nome,220)}</td><td class="num">${c.percentual?c.percentual+'%':'—'}</td><td>${c.carteira||'—'}</td><td>${c.cnpj_cpf||'—'}</td><td>${c.chave_pix||'—'}${c.tipo_pix?' <span class="muted small">('+c.tipo_pix+')</span>':''}</td><td>${c.telefone||'—'}</td><td>${trunc(c.email,170)}</td><td>${prioPill(c.prioridade_pagamento)}</td><td>${linkBtn(c.bitrix_url,'Abrir Bitrix')}</td><td>${linkBtn(c.link_nf,'Abrir NF')}</td><td><span class="pill s-${c.status==='ativo'?'PAGO':'SEM'}">${c.status||''}</span></td><td><button class="lk" onclick="editarContador(${c.id})">editar</button> &nbsp; <button class="lk" onclick="excluirContador(${c.id})">excluir</button></td></tr>`).join('');
+  const rows=shown.map(c=>`<tr><td>${trunc(c.nome,220)}</td><td class="num">${c.percentual?c.percentual+'%':'—'}</td><td>${c.carteira||'—'}</td><td>${c.cnpj_cpf||'—'}</td><td>${c.chave_pix||'—'}${c.tipo_pix?' <span class="muted small">('+c.tipo_pix+')</span>':''}</td><td>${c.contato_telefone||c.telefone||'—'}</td><td>${trunc(c.contato_email||c.email,170)}</td><td>${prioPill(c.prioridade_pagamento)}</td><td>${linkBtn(c.bitrix_url,'Abrir Bitrix')}</td><td>${linkBtn(c.link_nf,'Abrir NF')}</td><td><span class="pill s-${c.status==='ativo'?'PAGO':'SEM'}">${c.status||''}</span></td><td><button class="lk" onclick="editarContador(${c.id})">editar</button> &nbsp; <button class="lk" onclick="excluirContador(${c.id})">excluir</button></td></tr>`).join('');
   el.innerHTML=`<div class="card" style="padding:0"><div class="tablewrap"><table><thead><tr><th>Contador</th><th class="num">%</th><th>Carteira</th><th>CNPJ/CPF</th><th>Pix</th><th>Telefone</th><th>E-mail</th><th>Prioridade</th><th>Bitrix</th><th>NF</th><th>Status</th><th>Ações</th></tr></thead><tbody>${rows}</tbody></table></div></div>`+(list.length>200?`<div class="muted small" style="margin-top:8px">+ ${list.length-200} (refine a busca)</div>`:'');
 }
 async function salvarContador(){
   const d=cForm(), msg=document.getElementById('c_msg');
   if(!d.nome){ msg.textContent='Informe o nome.'; return; }
-  if(d.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)){ msg.textContent='E-mail inválido.'; return; }
+  if(d.contato_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.contato_email)){ msg.textContent='E-mail inválido.'; return; }
   msg.textContent='Salvando...';
   const res = edC ? await SB.from('contadores').update(d).eq('id',edC) : await SB.from('contadores').insert(d);
   if(res.error){ msg.textContent='Erro: '+res.error.message; return; }
@@ -518,13 +525,13 @@ async function salvarContador(){
 }
 function editarContador(id){
   const c=CONTADORES.find(x=>x.id===id); if(!c)return; edC=id;
-  set('c_nome',c.nome);set('c_pct',c.percentual||'');set('c_doc',c.cnpj_cpf);set('c_tipo',c.tipo_pix);set('c_pix',c.chave_pix);set('c_conta',c.nome_conta);set('c_tel',c.telefone||'');set('c_email',c.email||'');set('c_prio',c.prioridade_pagamento||'Média');set('c_nf',c.link_nf);set('c_status',c.status||'ativo');set('c_carteira',c.carteira||'');set('c_bitrix',c.bitrix_url);set('c_obs',c.observacao);
+  set('c_nome',c.nome);set('c_pct',c.percentual||'');set('c_doc',c.cnpj_cpf);set('c_tipo',c.tipo_pix);set('c_pix',c.chave_pix);set('c_conta',c.nome_conta);set('c_ctnome',c.contato_nome||'');set('c_tel',c.contato_telefone||c.telefone||'');set('c_email',c.contato_email||c.email||'');set('c_prio',c.prioridade_pagamento||'Média');set('c_nf',c.link_nf);set('c_status',c.status||'ativo');set('c_carteira',c.carteira||'');set('c_bitrix',c.bitrix_url);set('c_obs',c.observacao);
   document.getElementById('c_formtit').textContent='Editar contador';
   document.getElementById('c_cancel').style.display='inline-block';
   document.getElementById('c_nome').scrollIntoView({behavior:'smooth',block:'center'});
 }
 function cancelarContador(){
-  edC=null; ['c_nome','c_pct','c_doc','c_tipo','c_pix','c_conta','c_tel','c_email','c_nf','c_carteira','c_bitrix','c_obs'].forEach(i=>set(i,'')); set('c_status','ativo'); set('c_prio','Média');
+  edC=null; ['c_nome','c_pct','c_doc','c_tipo','c_pix','c_conta','c_ctnome','c_tel','c_email','c_nf','c_carteira','c_bitrix','c_obs'].forEach(i=>set(i,'')); set('c_status','ativo'); set('c_prio','Média');
   const t=document.getElementById('c_formtit'); if(t)t.textContent='Novo contador';
   const cc=document.getElementById('c_cancel'); if(cc)cc.style.display='none';
 }
