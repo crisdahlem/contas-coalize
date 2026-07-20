@@ -577,14 +577,15 @@ function renderLanc(){
   $('#l_mes').disabled=rng;$('#l_prev').disabled=rng;$('#l_next').disabled=rng;
   document.querySelectorAll('#view_lanc .card[data-sit]').forEach(el=>el.classList.toggle('sel',(el.getAttribute('data-sit')||'')===LSIT));
   const mes=lancBase();
+  let base=mes;
+  if(LBUSCA){const q=LBUSCA.toLowerCase();base=base.filter(c=>(c.descricao||'').toLowerCase().includes(q)||(c.fornecedor||'').toLowerCase().includes(q));}
   const sum=f=>f.reduce((s,c)=>s+Number(c.valor),0);
-  $('#k_vencidos').textContent=fmt(sum(mes.filter(c=>c.status==='a_pagar'&&c.vencimento<t)));
-  $('#k_hoje').textContent=fmt(sum(mes.filter(c=>c.status==='a_pagar'&&c.vencimento===t)));
-  $('#k_avencer').textContent=fmt(sum(mes.filter(c=>c.status==='a_pagar'&&c.vencimento>t)));
-  $('#k_pagos').textContent=fmt(sum(mes.filter(c=>c.status==='pago')));
-  $('#k_total').textContent=fmt(sum(mes));
-  let rows=mes;
-  if(LBUSCA){const q=LBUSCA.toLowerCase();rows=rows.filter(c=>(c.descricao||'').toLowerCase().includes(q)||(c.fornecedor||'').toLowerCase().includes(q));}
+  $('#k_vencidos').textContent=fmt(sum(base.filter(c=>c.status==='a_pagar'&&c.vencimento<t)));
+  $('#k_hoje').textContent=fmt(sum(base.filter(c=>c.status==='a_pagar'&&c.vencimento===t)));
+  $('#k_avencer').textContent=fmt(sum(base.filter(c=>c.status==='a_pagar'&&c.vencimento>t)));
+  $('#k_pagos').textContent=fmt(sum(base.filter(c=>c.status==='pago')));
+  $('#k_total').textContent=fmt(sum(base));
+  let rows=base;
   if(LSIT)rows=rows.filter(c=>situacao(c)[0]===(LSIT==='aberto'?'apagar':LSIT));
   rows=rows.slice().sort((a,b)=>a.vencimento<b.vencimento?-1:1);
   $('#l_count').textContent=`(${rows.length})`;
